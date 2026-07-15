@@ -27,6 +27,18 @@ This starter does not use `wrangler.jsonc`.
 - `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
 
+## Workshop Submission Contract
+
+- `useCases` is always a four-string tuple. Its positions represent Use Case
+  1, 2, 3, and 4 respectively.
+- A submitted or approved response must contain a description in exactly one
+  use-case position. The non-empty position is the selected fixed use case.
+- Drafts may be saved before that selection and description are complete.
+- `valueStreams` contains one or more fixed values (`"1"` through `"4"`) once
+  a response is submitted or approved.
+- The existing four use-case columns encode this contract directly, so this
+  change does not require a database migration.
+
 ## Workspace Auth Headers
 
 OpenAI workspace sites can read the current user's email from

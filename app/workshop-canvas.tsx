@@ -2,14 +2,12 @@
 
 import {
   FormEvent,
-  KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
 
-type View = "present" | "submit" | "review";
 type Status = "draft" | "submitted" | "rejected" | "approved";
 
 type Plant = {
@@ -40,6 +38,7 @@ type FormState = {
   plant: string;
   submitterName: string;
   submitterEmail: string;
+  selectedUseCase: string;
   useCaseDescriptions: Record<string, string>;
   valueStreams: string[];
   expectedBenefits: string;
@@ -108,16 +107,11 @@ const EMPTY_FORM: FormState = {
   plant: "Panipat",
   submitterName: "",
   submitterEmail: "",
+  selectedUseCase: "",
   useCaseDescriptions: {},
   valueStreams: [],
   expectedBenefits: "",
 };
-
-const NAV_ITEMS: Array<{ id: View; label: string; eyebrow: string }> = [
-  { id: "present", label: "Present", eyebrow: "Workshop view" },
-  { id: "submit", label: "Respond", eyebrow: "Leader form" },
-  { id: "review", label: "Review", eyebrow: "Admin desk" },
-];
 
 function normaliseSubmission(value: Partial<Submission>): Submission {
   const rawUseCases = Array.isArray(value.useCases) ? value.useCases : [];
@@ -135,7 +129,7 @@ function normaliseSubmission(value: Partial<Submission>): Submission {
         id: String(item?.id ?? USE_CASES[index] ?? `Use Case ${index + 1}`),
         description: String(item?.description ?? ""),
       };
-    }),
+    }).filter((item) => item.description.trim().length > 0),
     valueStreams: Array.isArray(value.valueStreams)
       ? value.valueStreams.map((item) => {
           const text = String(item);
@@ -188,29 +182,95 @@ function completion(form: FormState) {
     Boolean(form.plant),
     Boolean(form.submitterName.trim()),
     Boolean(form.submitterEmail.trim()),
-    USE_CASES.every((id) => form.useCaseDescriptions[id]?.trim()),
+    Boolean(
+      form.selectedUseCase &&
+        form.useCaseDescriptions[form.selectedUseCase]?.trim(),
+    ),
     form.valueStreams.length > 0,
     Boolean(form.expectedBenefits.trim()),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
-export function WorkshopCanvas() {
-  const [view, setView] = useState<View>("present");
+export function WorkshopPresentation() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [activePlant, setActivePlant] = useState<string | null>(null);
   const [responseIndex, setResponseIndex] = useState(0);
 
-  const loadSubmissions = useCallback(async (mode: View) => {
+  const loadSubmissions = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    try {
+      const response = await fetch("/api/submissions?presentation=true", {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Unable to load responses");
+      setSubmissions(apiRows(await response.json()));
+    } catch {
+      if (!silent) {
+        setNotice("Responses will appear here once the data service is available.");
+      }
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSubmissions();
+    const interval = window.setInterval(() => void loadSubmissions(true), 12_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void loadSubmissions(true);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadSubmissions]);
+
+  return (
+    <main className="app-shell presentation-shell">
+      <PresentationView
+        submissions={submissions}
+        isLoading={isLoading}
+        notice={notice}
+        activePlant={activePlant}
+        responseIndex={responseIndex}
+        onPlantChange={(plant) => {
+          setActivePlant(plant);
+          setResponseIndex(0);
+        }}
+        onResponseChange={setResponseIndex}
+        onExit={() => {
+          setActivePlant(null);
+          setResponseIndex(0);
+        }}
+      />
+    </main>
+  );
+}
+
+export function LeaderSubmission() {
+  const [notice, setNotice] = useState("");
+
+  return (
+    <main className="app-shell operational-shell">
+      <SurfaceHeader context="Leader submission" />
+      <SubmissionView notice={notice} onSaved={setNotice} />
+    </main>
+  );
+}
+
+export function AdminReview() {
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+
+  const loadSubmissions = useCallback(async () => {
     setIsLoading(true);
     try {
-      const endpoint =
-        mode === "present"
-          ? "/api/submissions?presentation=true"
-          : "/api/submissions";
-      const response = await fetch(endpoint, { cache: "no-store" });
+      const response = await fetch("/api/submissions", { cache: "no-store" });
       if (!response.ok) throw new Error("Unable to load responses");
       setSubmissions(apiRows(await response.json()));
     } catch {
@@ -221,70 +281,29 @@ export function WorkshopCanvas() {
   }, []);
 
   useEffect(() => {
-    if (view !== "submit") void loadSubmissions(view);
-  }, [loadSubmissions, view]);
-
-  const switchView = (next: View) => {
-    setView(next);
-    setNotice("");
-    if (next !== "present") setActivePlant(null);
-  };
+    void loadSubmissions();
+  }, [loadSubmissions]);
 
   return (
-    <main className={`app-shell view-${view}`}>
-      <Header view={view} onViewChange={switchView} />
-      {view === "present" && (
-        <PresentationView
-          submissions={submissions}
-          isLoading={isLoading}
-          notice={notice}
-          activePlant={activePlant}
-          responseIndex={responseIndex}
-          onPlantChange={(plant) => {
-            setActivePlant(plant);
-            setResponseIndex(0);
-          }}
-          onResponseChange={setResponseIndex}
-          onExit={() => {
-            setActivePlant(null);
-            setResponseIndex(0);
-          }}
-        />
-      )}
-      {view === "submit" && (
-        <SubmissionView
-          onSaved={(message) => {
-            setNotice(message);
-            void loadSubmissions("review");
-          }}
-          notice={notice}
-        />
-      )}
-      {view === "review" && (
-        <ReviewView
-          submissions={submissions}
-          isLoading={isLoading}
-          notice={notice}
-          onChanged={async (message) => {
-            setNotice(message);
-            await loadSubmissions("review");
-          }}
-        />
-      )}
+    <main className="app-shell operational-shell">
+      <SurfaceHeader context="Admin verification" />
+      <ReviewView
+        submissions={submissions}
+        isLoading={isLoading}
+        notice={notice}
+        onChanged={async (message) => {
+          setNotice(message);
+          await loadSubmissions();
+        }}
+      />
     </main>
   );
 }
 
-function Header({
-  view,
-  onViewChange,
-}: {
-  view: View;
-  onViewChange: (view: View) => void;
-}) {
+function SurfaceHeader({ context }: { context: string }) {
   return (
-    <header className="site-header">
-      <button className="brand" type="button" onClick={() => onViewChange("present")}>
+    <header className="site-header surface-header">
+      <div className="brand surface-brand">
         <span className="brand-mark" aria-hidden="true">
           <i />
           <i />
@@ -294,23 +313,10 @@ function Header({
           <strong>Birla Opus</strong>
           <small>Plant Workshop Canvas</small>
         </span>
-      </button>
-      <nav className="main-nav" aria-label="Primary navigation">
-        {NAV_ITEMS.map((item) => (
-          <button
-            className={view === item.id ? "active" : ""}
-            key={item.id}
-            onClick={() => onViewChange(item.id)}
-            type="button"
-          >
-            <small>{item.eyebrow}</small>
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </nav>
+      </div>
       <div className="header-note">
         <span className="live-dot" />
-        Workshop ready
+        {context}
       </div>
     </header>
   );
@@ -381,6 +387,15 @@ function PresentationView({
   if (!activePlant) {
     return (
       <section className="presentation-index">
+        <div className="presentation-brandline">
+          <span className="brand-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <strong>Birla Opus</strong>
+          <span>Plant Leadership Workshop</span>
+        </div>
         <div className="presentation-intro">
           <div>
             <p className="eyebrow light">Presentation mode · Six plants</p>
@@ -433,6 +448,9 @@ function PresentationView({
 
   const plant = getPlant(activePlant);
   const response = plantResponses[responseIndex] ?? null;
+  const chosenUseCase = response?.useCases.find(
+    (item) => item.description.trim().length > 0,
+  );
 
   return (
     <section className="plant-presentation" style={{ "--plant-accent": plant.accent } as React.CSSProperties}>
@@ -443,6 +461,7 @@ function PresentationView({
         }}
       >
         <button className="back-link" type="button" onClick={onExit}>← All plants</button>
+        <div className="hero-brand">Birla Opus · Plant Leadership Workshop</div>
         <div className="plant-hero-copy">
           <p className="eyebrow light">Plant {plant.number} · {plant.location}</p>
           <h1>{plant.name}</h1>
@@ -468,42 +487,64 @@ function PresentationView({
         </div>
       </div>
 
-      <div className="response-stage">
+      <div className="response-stage response-stage-compact">
         {response ? (
           <>
-            <div className="use-case-panel">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">Workshop response</p>
-                  <h2>Use cases</h2>
+            <aside className="response-facts">
+              <article className="selected-use-case">
+                <p className="eyebrow">Chosen use case</p>
+                <div className="selected-use-case-heading">
+                  <span>
+                    {String(
+                      Math.max(1, USE_CASES.indexOf(chosenUseCase?.id ?? "") + 1),
+                    ).padStart(2, "0")}
+                  </span>
+                  <h2>{chosenUseCase?.id ?? "Use case"}</h2>
                 </div>
-                <span>{response.useCases.length} selected</span>
-              </div>
-              <div className="use-case-grid">
-                {response.useCases.map((item, index) => (
-                  <article className="use-case-card" key={`${item.id}-${index}`}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <h3>{item.id}</h3>
-                    <p>{item.description}</p>
-                  </article>
-                ))}
-              </div>
-            </div>
+                <p className="selected-use-case-description">
+                  {chosenUseCase?.description ?? "No use-case description supplied."}
+                </p>
+              </article>
 
-            <aside className="benefit-panel">
-              <div>
-                <p className="eyebrow light">Manufacturing aspect</p>
-                <h2>Value streams</h2>
-                <div className="stream-list">
-                  {response.valueStreams.map((stream) => <span key={stream}>{stream}</span>)}
+              <div className="value-stream-summary">
+                <p className="eyebrow">Selected value streams</p>
+                <div className="stream-sentence">
+                  {response.valueStreams.map((stream) => (
+                    <span key={stream}>{stream}</span>
+                  ))}
                 </div>
-              </div>
-              <div className="benefit-copy">
-                <span className="benefit-mark" aria-hidden="true">＋</span>
-                <p className="eyebrow light">Expected benefits</p>
-                <blockquote>{response.expectedBenefits}</blockquote>
               </div>
             </aside>
+
+            <article className="expected-benefits-panel">
+              <div className="expected-benefits-heading">
+                <div>
+                  <p className="eyebrow light">Primary workshop outcome</p>
+                  <h2>Expected benefits</h2>
+                </div>
+                <span>03</span>
+              </div>
+              <div className="expected-benefits-copy">
+                <span className="benefit-mark" aria-hidden="true">＋</span>
+                <blockquote
+                  className={
+                    response.expectedBenefits.length > 900
+                      ? "very-long-copy"
+                      : response.expectedBenefits.length > 600
+                        ? "long-copy"
+                        : response.expectedBenefits.length > 300
+                          ? "medium-copy"
+                          : ""
+                  }
+                >
+                  {response.expectedBenefits}
+                </blockquote>
+              </div>
+              <div className="expected-benefits-footer">
+                <span>{getPlant(response.plant).name}</span>
+                <span>Verified response</span>
+              </div>
+            </article>
           </>
         ) : (
           <div className="empty-presentation">
@@ -519,17 +560,11 @@ function PresentationView({
 
       <div className="response-navigation">
         <button type="button" onClick={() => moveResponse(-1)} disabled={plantResponses.length < 2}>← Previous response</button>
-        <div className="response-dots" aria-label="Response position">
-          {plantResponses.map((item, index) => (
-            <button
-              type="button"
-              key={item.id}
-              className={index === responseIndex ? "active" : ""}
-              onClick={() => onResponseChange(index)}
-              aria-label={`Open response ${index + 1}`}
-            />
-          ))}
-        </div>
+        <span className="response-position" aria-label="Response position">
+          {plantResponses.length
+            ? `${String(responseIndex + 1).padStart(2, "0")} / ${String(plantResponses.length).padStart(2, "0")}`
+            : "00 / 00"}
+        </span>
         <button type="button" onClick={() => moveResponse(1)} disabled={plantResponses.length < 2}>Next response →</button>
       </div>
     </section>
@@ -563,8 +598,10 @@ function SubmissionView({
     const next: string[] = [];
     if (!form.submitterName.trim()) next.push("Add the leader’s name.");
     if (!/^\S+@\S+\.\S+$/.test(form.submitterEmail)) next.push("Add a valid email address.");
-    if (USE_CASES.some((id) => !form.useCaseDescriptions[id]?.trim())) {
-      next.push("Describe all four use cases.");
+    if (!form.selectedUseCase) {
+      next.push("Choose one use case.");
+    } else if (!form.useCaseDescriptions[form.selectedUseCase]?.trim()) {
+      next.push("Add a short description for the chosen use case.");
     }
     if (!form.valueStreams.length) next.push("Select at least one value stream.");
     if (!form.expectedBenefits.trim()) next.push("Describe the expected benefits.");
@@ -584,7 +621,11 @@ function SubmissionView({
           plant: form.plant,
           submitterName: form.submitterName,
           submitterEmail: form.submitterEmail,
-          useCases: USE_CASES.map((id) => form.useCaseDescriptions[id]?.trim() ?? ""),
+          useCases: USE_CASES.map((id) =>
+            id === form.selectedUseCase
+              ? form.useCaseDescriptions[id]?.trim() ?? ""
+              : "",
+          ),
           valueStreams: form.valueStreams.map(
             (stream) => String(VALUE_STREAMS.indexOf(stream) + 1),
           ),
@@ -706,16 +747,30 @@ function SubmissionView({
           </fieldset>
 
           <fieldset className="form-section">
-            <legend><span>03</span><div>Use Cases<small>Briefly describe each fixed use case.</small></div></legend>
+            <legend><span>03</span><div>Use Case<small>Choose one fixed use case and add a short description.</small></div></legend>
             <div className="choice-stack">
-              {USE_CASES.map((useCase, index) => (
-                  <div className="expand-choice selected" key={useCase}>
-                    <div className="choice-heading">
-                      <span className="check-box">✓</span>
+              {USE_CASES.map((useCase, index) => {
+                const selected = form.selectedUseCase === useCase;
+                return (
+                  <div className={`expand-choice ${selected ? "selected" : ""}`} key={useCase}>
+                    <label className="choice-heading">
+                      <input
+                        type="radio"
+                        name="useCase"
+                        checked={selected}
+                        onChange={() =>
+                          setForm((current) => ({
+                            ...current,
+                            selectedUseCase: useCase,
+                          }))
+                        }
+                      />
+                      <span className="check-box">{selected ? "✓" : ""}</span>
                       <span className="choice-index">0{index + 1}</span>
                       <strong>{useCase}</strong>
-                      <small>Fixed field</small>
-                    </div>
+                      <small>{selected ? "Selected" : "Choose"}</small>
+                    </label>
+                    {selected && (
                       <label className="description-field">
                         <span>Description for {useCase}</span>
                         <textarea
@@ -730,8 +785,10 @@ function SubmissionView({
                         />
                         <small>{form.useCaseDescriptions[useCase]?.length ?? 0}/300</small>
                       </label>
+                    )}
                   </div>
-              ))}
+                );
+              })}
             </div>
           </fieldset>
 
@@ -759,10 +816,10 @@ function SubmissionView({
                 value={form.expectedBenefits}
                 onChange={(event) => setForm((current) => ({ ...current, expectedBenefits: event.target.value }))}
                 placeholder="What becomes better if this idea succeeds? Consider quality, speed, cost, safety, reliability or customer value…"
-                maxLength={600}
-                rows={6}
+                maxLength={1200}
+                rows={8}
               />
-              <small>{form.expectedBenefits.length}/600</small>
+              <small>{form.expectedBenefits.length}/1200</small>
             </label>
           </fieldset>
 
@@ -844,7 +901,7 @@ function ReviewView({
       </div>
       {notice && <div className="review-notice" role="status">{notice}</div>}
 
-      <div className="review-filters" role="tablist" aria-label="Filter responses">
+      <div className="review-filters" aria-label="Filter responses">
         {[
           ["submitted", "Submitted"],
           ["rejected", "Needs changes"],
@@ -852,7 +909,7 @@ function ReviewView({
           ["live", "In presentation"],
           ["all", "All responses"],
         ].map(([id, label]) => (
-          <button type="button" role="tab" aria-selected={filter === id} className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id as typeof filter)}>
+          <button type="button" aria-pressed={filter === id} className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id as typeof filter)}>
             {label}
           </button>
         ))}
@@ -938,11 +995,4 @@ function ReviewView({
       </div>
     </section>
   );
-}
-
-export function handleChipKey(event: ReactKeyboardEvent, action: () => void) {
-  if (event.key === " " || event.key === "Enter") {
-    event.preventDefault();
-    action();
-  }
 }

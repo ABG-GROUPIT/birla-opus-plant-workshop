@@ -27,9 +27,21 @@ export async function GET(request: Request) {
       status: parseStatusFilter(searchParams.get("status")),
       isVisible,
     });
+    const responseSubmissions = presentation
+      ? submissions.map((submission) => ({
+          id: submission.id,
+          plant: submission.plant,
+          submitterName: submission.submitterName,
+          useCases: submission.useCases,
+          valueStreams: submission.valueStreams,
+          expectedBenefits: submission.expectedBenefits,
+          status: submission.status,
+          isVisible: submission.isVisible,
+        }))
+      : submissions;
 
     return Response.json(
-      { submissions, count: submissions.length },
+      { submissions: responseSubmissions, count: responseSubmissions.length },
       { headers: NO_STORE_HEADERS },
     );
   } catch (error) {

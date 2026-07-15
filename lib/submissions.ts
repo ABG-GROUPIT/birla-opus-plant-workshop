@@ -5,6 +5,10 @@ import {
   type PlantName,
   type SubmissionStatus,
 } from "@/db/schema";
+import {
+  getSubmissionCompletionErrors,
+  requiresCompleteResponse,
+} from "@/lib/submission-validation";
 
 export const VALUE_STREAMS = ["1", "2", "3", "4"] as const;
 
@@ -79,7 +83,6 @@ export interface SubmissionFilters {
 const PLANT_SET = new Set<string>(PLANT_NAMES);
 const STATUS_SET = new Set<string>(SUBMISSION_STATUSES);
 const VALUE_STREAM_SET = new Set<string>(VALUE_STREAMS);
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SELECT_SUBMISSION_COLUMNS = `
 SELECT
   id,
@@ -178,7 +181,10 @@ function parseUseCases(
   }
 
   if (!Array.isArray(value) || value.length !== 4) {
-    throw new SubmissionError("useCases must contain exactly four descriptions", 400);
+    throw new SubmissionError(
+      "useCases must contain exactly four fixed slots",
+      400,
+    );
   }
 
   return [
@@ -230,30 +236,14 @@ function assertComplete(submission: {
   valueStreams: readonly ValueStream[];
   expectedBenefits: string;
 }): void {
-  const details: string[] = [];
-
-  if (!submission.submitterName) {
-    details.push("submitterName is required");
-  }
-  if (!submission.submitterEmail) {
-    details.push("submitterEmail is required");
-  } else if (!EMAIL_PATTERN.test(submission.submitterEmail)) {
-    details.push("submitterEmail must be a valid email address");
-  }
-  submission.useCases.forEach((description, index) => {
-    if (!description) {
-      details.push(`useCases[${index}] is required`);
-    }
-  });
-  if (submission.valueStreams.length === 0) {
-    details.push("at least one value stream is required");
-  }
-  if (!submission.expectedBenefits) {
-    details.push("expectedBenefits is required");
-  }
+  const details = getSubmissionCompletionErrors(submission);
 
   if (details.length > 0) {
-    throw new SubmissionError("The response is incomplete", 422, details);
+    throw new SubmissionError(
+      "The response cannot be submitted",
+      422,
+      details,
+    );
   }
 }
 
@@ -511,7 +501,7 @@ export async function updateSubmission(
     updatedAt: now,
   };
 
-  if (next.status !== "draft") {
+  if (requiresCompleteResponse(next.status)) {
     assertComplete(next);
   }
 

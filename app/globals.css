@@ -78,6 +78,14 @@ a:focus-visible {
   z-index: 50;
 }
 
+.surface-header {
+  grid-template-columns: minmax(250px, 1fr) auto;
+}
+
+.surface-brand {
+  cursor: default;
+}
+
 .brand {
   align-items: center;
   align-self: center;
@@ -247,8 +255,31 @@ a:focus-visible {
     radial-gradient(circle at 5% 75%, rgba(28, 157, 164, 0.12), transparent 26%),
     #19131f;
   color: white;
-  min-height: calc(100vh - 84px);
+  min-height: 100dvh;
   padding: clamp(34px, 5vh, 70px) clamp(24px, 5vw, 82px) 24px;
+}
+
+.presentation-brandline {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin: 0 auto clamp(30px, 4vh, 52px);
+  max-width: 1520px;
+}
+
+.presentation-brandline > strong {
+  font-size: 13px;
+  letter-spacing: -0.02em;
+}
+
+.presentation-brandline > span:last-child {
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  margin-left: 4px;
+  padding-left: 16px;
+  text-transform: uppercase;
 }
 
 .presentation-intro {
@@ -540,7 +571,10 @@ a:focus-visible {
 /* Individual plant presentation */
 .plant-presentation {
   background: var(--canvas);
-  min-height: calc(100vh - 84px);
+  display: grid;
+  grid-template-rows: clamp(176px, 23dvh, 248px) minmax(0, 1fr) clamp(56px, 6dvh, 64px);
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .plant-hero {
@@ -548,10 +582,21 @@ a:focus-visible {
   background-position: center 48%;
   background-size: cover;
   color: white;
-  height: clamp(330px, 42vh, 510px);
+  height: auto;
   overflow: hidden;
   padding: clamp(28px, 4vw, 64px) clamp(26px, 6vw, 96px);
   position: relative;
+}
+
+.hero-brand {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  position: absolute;
+  right: clamp(26px, 6vw, 96px);
+  text-transform: uppercase;
+  top: clamp(28px, 4vw, 64px);
 }
 
 .plant-hero::after {
@@ -583,17 +628,17 @@ a:focus-visible {
 }
 
 .plant-hero-copy {
-  bottom: clamp(34px, 5vw, 72px);
-  left: clamp(26px, 6vw, 96px);
+  bottom: clamp(22px, 3.5vh, 36px);
+  left: clamp(175px, 16vw, 250px);
   position: absolute;
 }
 
 .plant-hero-copy h1 {
-  font-size: clamp(58px, 8vw, 132px);
+  font-size: clamp(52px, 6vw, 96px);
   font-weight: 560;
   letter-spacing: -0.075em;
   line-height: 0.82;
-  margin: 0 0 28px;
+  margin: 0 0 16px;
 }
 
 .response-meta {
@@ -644,7 +689,7 @@ a:focus-visible {
 .response-stage {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(360px, 0.8fr);
-  min-height: 500px;
+  min-height: 0;
 }
 
 .use-case-panel {
@@ -763,6 +808,188 @@ a:focus-visible {
   margin: 0;
 }
 
+/* Compact, projector-first response composition */
+.response-stage-compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(150px, 30%) minmax(0, 70%);
+  overflow: hidden;
+}
+
+.response-facts {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: minmax(0, 2.35fr) minmax(260px, 0.95fr);
+  min-height: 0;
+}
+
+.selected-use-case {
+  align-content: center;
+  border-right: 1px solid var(--line);
+  display: grid;
+  gap: 10px clamp(24px, 3.5vw, 58px);
+  grid-template-columns: minmax(175px, 0.42fr) minmax(0, 1fr);
+  padding: clamp(22px, 3.4vh, 40px) clamp(26px, 5vw, 80px);
+}
+
+.selected-use-case > .eyebrow {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+}
+
+.selected-use-case-heading {
+  align-self: start;
+}
+
+.selected-use-case-heading span {
+  color: var(--plant-accent);
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin-bottom: 9px;
+}
+
+.selected-use-case-heading h2 {
+  font-size: clamp(24px, 2.2vw, 38px);
+  font-weight: 580;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  margin: 0;
+}
+
+.selected-use-case-description {
+  align-self: start;
+  color: #5f5563;
+  font-size: clamp(15px, 1.15vw, 19px);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 780px;
+}
+
+.value-stream-summary {
+  align-content: center;
+  background: color-mix(in srgb, var(--plant-accent) 8%, var(--paper));
+  display: grid;
+  padding: clamp(22px, 3.4vh, 40px) clamp(24px, 3.5vw, 48px);
+}
+
+.value-stream-summary .eyebrow {
+  margin-bottom: 13px;
+}
+
+.stream-sentence {
+  border-left: 3px solid var(--plant-accent);
+  display: block;
+  line-height: 1.45;
+  padding-left: 15px;
+}
+
+.stream-sentence span {
+  color: color-mix(in srgb, var(--plant-accent) 78%, var(--ink));
+  font-size: clamp(15px, 1.25vw, 19px);
+  font-weight: 650;
+}
+
+.stream-sentence span + span::before {
+  color: #a096a3;
+  content: " · ";
+  font-weight: 400;
+  margin: 0 5px;
+}
+
+.expected-benefits-panel {
+  background:
+    radial-gradient(circle at 86% 8%, color-mix(in srgb, var(--plant-accent) 22%, transparent), transparent 34%),
+    var(--ink);
+  color: white;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.28fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: clamp(28px, 4.5vh, 56px) clamp(28px, 5.5vw, 88px) 0;
+}
+
+.expected-benefits-heading {
+  align-content: start;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  margin-bottom: clamp(24px, 3vh, 38px);
+  padding-right: clamp(28px, 4vw, 60px);
+}
+
+.expected-benefits-heading h2 {
+  font-size: clamp(30px, 3.1vw, 48px);
+  font-weight: 560;
+  letter-spacing: -0.055em;
+  line-height: 1;
+  margin: 0;
+}
+
+.expected-benefits-heading > span {
+  color: var(--plant-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.expected-benefits-copy {
+  align-items: center;
+  display: flex;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 clamp(24px, 3vh, 38px) clamp(32px, 4.5vw, 72px);
+  position: relative;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-width: thin;
+}
+
+.expected-benefits-copy .benefit-mark {
+  color: var(--plant-accent);
+  font-size: 34px;
+  left: clamp(32px, 4.5vw, 72px);
+  position: absolute;
+  top: 0;
+}
+
+.expected-benefits-copy blockquote {
+  font-size: clamp(24px, 2.45vw, 38px);
+  font-weight: 430;
+  letter-spacing: -0.035em;
+  line-height: 1.38;
+  margin: 34px 0 0;
+  max-width: 1150px;
+}
+
+.expected-benefits-copy blockquote.medium-copy {
+  font-size: clamp(22px, 2.1vw, 32px);
+}
+
+.expected-benefits-copy blockquote.long-copy {
+  font-size: clamp(20px, 1.8vw, 27px);
+}
+
+.expected-benefits-copy blockquote.very-long-copy {
+  font-size: clamp(18px, 1.55vw, 23px);
+  line-height: 1.45;
+}
+
+.expected-benefits-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.52);
+  display: flex;
+  font-size: 8px;
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  letter-spacing: 0.13em;
+  min-height: 38px;
+  padding-top: 13px;
+  text-transform: uppercase;
+}
+
 .empty-presentation {
   align-items: flex-start;
   display: flex;
@@ -806,8 +1033,15 @@ a:focus-visible {
   border-top: 1px solid var(--line);
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  min-height: 76px;
+  min-height: 0;
   padding: 0 clamp(26px, 5.5vw, 88px);
+}
+
+.response-position {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
 }
 
 .response-navigation > button {
@@ -1242,14 +1476,24 @@ a:focus-visible {
 
 .check-box {
   align-items: center;
-  background: var(--violet);
-  border: 1px solid var(--violet);
-  color: white;
+  background: transparent;
+  border: 1px solid #c9c1ca;
+  color: transparent;
   display: flex;
   font-size: 10px;
   height: 22px;
   justify-content: center;
   width: 22px;
+}
+
+.choice-heading {
+  cursor: pointer;
+}
+
+.expand-choice.selected .check-box {
+  background: var(--violet);
+  border-color: var(--violet);
+  color: white;
 }
 
 .choice-index {
@@ -1924,12 +2168,11 @@ a:focus-visible {
   }
 
   .app-shell > section {
-    margin-top: 62px;
+    margin-top: 0;
   }
 
-  .presentation-index,
-  .plant-presentation {
-    min-height: calc(100vh - 146px);
+  .presentation-index {
+    min-height: 100dvh;
   }
 
   .plant-grid {
@@ -2001,7 +2244,7 @@ a:focus-visible {
   }
 
   .app-shell > section {
-    margin-top: 58px;
+    margin-top: 0;
   }
 
   .presentation-index {
@@ -2041,8 +2284,15 @@ a:focus-visible {
     display: none;
   }
 
+  .plant-presentation {
+    display: block;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
   .plant-hero {
-    height: 370px;
+    height: 300px;
     padding: 22px 20px;
   }
 
@@ -2075,6 +2325,75 @@ a:focus-visible {
   .use-case-panel,
   .benefit-panel {
     padding: 42px 20px;
+  }
+
+  .response-stage-compact {
+    display: block;
+    overflow: visible;
+  }
+
+  .response-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .selected-use-case {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+    grid-template-columns: 1fr;
+    padding: 34px 20px;
+  }
+
+  .selected-use-case > .eyebrow {
+    grid-column: auto;
+  }
+
+  .value-stream-summary {
+    padding: 28px 20px;
+  }
+
+  .expected-benefits-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(330px, auto) auto;
+    min-height: 520px;
+    padding: 36px 20px 0;
+  }
+
+  .expected-benefits-heading {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    border-right: 0;
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    padding: 0 0 28px;
+  }
+
+  .expected-benefits-heading > span {
+    align-self: flex-end;
+  }
+
+  .expected-benefits-copy {
+    padding: 34px 0;
+  }
+
+  .expected-benefits-copy .benefit-mark {
+    left: 0;
+    top: 22px;
+  }
+
+  .expected-benefits-copy blockquote {
+    margin-top: 34px;
+  }
+
+  .expected-benefits-footer {
+    padding-bottom: 14px;
+  }
+
+  .response-navigation {
+    bottom: 0;
+    height: 60px;
+    position: sticky;
+    z-index: 20;
   }
 
   .use-case-grid,
