@@ -1,86 +1,159 @@
 # Submission backend setup
 
-The Next.js server API stores every draft, submission, edit, approval, and
-visibility change in Supabase/Postgres. There is no local or ephemeral
-production fallback: missing Supabase configuration causes the API to fail
-instead of silently losing data.
+GitHub Pages serves a static Next.js export. Supabase/Postgres owns every final
+submission, admin edit, approval, rejection, and audit entry. There is no
+ephemeral production fallback and there are no browser-facing Next.js API
+routes.
 
-The browser-facing contract stays unchanged. Leaders submit through the custom
-form, admins edit and approve the same records, and presentation queries always
-apply both `status = approved` and `is_visible = true`.
+## Architecture and trust boundary
 
-## 1. Create the database
+The static browser bundle uses the Supabase project URL and publishable key to
+call only these PostgREST RPC functions:
 
-1. Create or select the Supabase project that will own workshop data.
-2. Run
-   [`supabase/migrations/202607160001_workshop_submissions.sql`](../supabase/migrations/202607160001_workshop_submissions.sql)
-   in the Supabase SQL editor or migration workflow.
-3. Confirm that `workshop_submissions` and `workshop_submission_audit` exist.
+| RPC | Browser use | Database guarantee |
+| --- | --- | --- |
+| `workshop_public_list()` | Load the presentation | Returns only approved and visible rows, excluding email and designation |
+| `workshop_submit(...)` | Submit a leader response | Validates fixed fields, creates the identifiers and timestamps, and forces `submitted` plus hidden |
+| `workshop_admin_list(p_capability)` | Load the review queue | Validates the admin capability before returning full review data |
+| `workshop_admin_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency |
 
-The migration:
+The tables do not grant direct access to `anon` or `authenticated`. The RPCs are
+`SECURITY DEFINER` functions with a restricted search path and narrowly scoped
+execute grants. This lets a static site perform the required operations without
+exposing a database-wide credential.
 
-- restricts plants and workflow statuses to the supported fixed values;
-- permits incomplete drafts but validates submitted and approved responses;
-- prevents non-approved records from becoming presentation-visible;
-- enables row-level security and removes direct `anon` and `authenticated`
-  access;
-- grants the server-side `service_role` access; and
-- records changed field names and workflow transitions without duplicating
-  leader wording in the audit table.
+The publishable key is designed to appear in browser code; it identifies the
+Supabase project but does not bypass row-level security. In contrast, a Supabase
+secret or service-role key bypasses database protections and must never appear
+in:
 
-## 2. Configure server variables
+- a `NEXT_PUBLIC_` variable;
+- the generated `out/` directory;
+- GitHub Actions variables or repository files; or
+- browser request headers.
 
-For local development, copy `.env.example` to `.env.local`. In Vercel, add the
-same values to Production, Preview, and Development as appropriate:
+## 1. Apply the database migrations
 
-```dotenv
-SUBMISSIONS_STORAGE=supabase
-SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_SECRET_KEY=sb_secret_YOUR_SERVER_SECRET
-```
+Run these files in filename order in the Supabase SQL editor or migration
+workflow:
 
-Use the project URL and a current `sb_secret_...` server key from Supabase. The
-adapter also accepts the legacy JWT service-role key through
-`SUPABASE_SERVICE_ROLE_KEY`, but new deployments should prefer
-`SUPABASE_SECRET_KEY`.
+1. [`202607160001_workshop_submissions.sql`](../supabase/migrations/202607160001_workshop_submissions.sql)
+2. [`202607160002_static_browser_rpc.sql`](../supabase/migrations/202607160002_static_browser_rpc.sql)
 
-These values must remain server-only. Do not prefix them with `NEXT_PUBLIC_`,
-commit them, or paste them into browser code.
+The first migration creates the submission and audit tables, validation
+constraints, indexes, audit trigger, row-level security, and direct-access
+revocations. The second migration creates the private capability store and the
+four public RPC entry points, grants only the required RPC execution, and keeps
+the underlying tables closed to browser roles.
 
-## 3. Deploy on Vercel
+The admin capability is a random bearer value. Only its SHA-256 hash belongs in
+the database migration; the raw value is supplied separately. Never add the raw
+capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-1. Import `ABG-GROUPIT/birla-opus-plant-workshop` into Vercel.
-2. Select the **Next.js** framework preset and root directory `./`.
-3. Keep the default build command (`next build`) and output (`.next`).
-4. Add the required environment variables before deploying.
-5. Keep deployment protection disabled if the workshop URLs must be public.
-6. Deploy the production branch.
+After applying both migrations, confirm that:
 
-After deployment, verify this workflow against the production URL:
+- `public.workshop_submissions` and `public.workshop_submission_audit` exist;
+- the four `public.workshop_*` RPC functions exist;
+- `anon` cannot select, insert, or update either table directly; and
+- `anon` can execute only the intended RPC functions.
 
-1. `GET /api/submissions` returns a JSON collection.
-2. Save a draft through `/submit`, then refresh `/admin` and confirm it remains.
-3. Submit a complete response, edit it in `/admin`, and approve it.
-4. Confirm it appears in `GET /api/submissions?presentation=true` and on `/`.
-5. Redeploy and confirm the same response still exists.
+## 2. Configure the browser-safe Supabase values
 
-## Optional Google Sheet mirror
-
-Supabase is authoritative. A Google Apps Script webhook can receive a
-best-effort event copy after each successful create or update. Configure both
-variables or neither:
+Find the project URL and publishable key under Supabase project settings. For
+local development, copy `.env.example` to `.env.local` and set:
 
 ```dotenv
-GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT/exec
-GOOGLE_SHEETS_WEBHOOK_SECRET=YOUR_LONG_RANDOM_SHARED_SECRET
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_PUBLIC_KEY
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_BASE_PATH=
 ```
 
-Next.js schedules the mirror after the API response so a slow or unavailable
-Sheet cannot roll back the Supabase write.
+The workshop browser adapter sends the publishable key in the `apikey` header.
+It does not send a secret key, service-role key, or database password.
 
-## Access warning
+## 3. Use the complete admin capability link
 
-The current workshop requirement leaves submission creation and admin APIs
-unauthenticated. A public deployment therefore lets anyone who discovers the
-admin URL read, edit, approve, reject, or hide responses. The Supabase secret
-still remains server-side, but URL secrecy is not an authorization control.
+The deployed GitHub Pages links are:
+
+```text
+Presentation: https://abg-groupit.github.io/birla-opus-plant-workshop/
+Leader form:  https://abg-groupit.github.io/birla-opus-plant-workshop/submit/
+Admin shell:  https://abg-groupit.github.io/birla-opus-plant-workshop/admin/
+Admin access: https://abg-groupit.github.io/birla-opus-plant-workshop/admin/#<RAW_ADMIN_CAPABILITY>
+```
+
+The capability comes after `#`, so GitHub Pages does not receive it in the page
+request. The app moves it into session storage, removes it from the visible
+address bar, and sends it only in HTTPS POST bodies to the admin RPCs. Opening
+the admin shell without the fragment does not grant access.
+
+This is intentionally link-based access rather than user authentication. Anyone
+with the complete link has administrator authority, so distribute it only to
+workshop administrators. To rotate access, create a new random capability,
+store only its hash in the private capability table, revoke the old record, and
+distribute the new complete link outside Git.
+
+## 4. Configure GitHub Actions and Pages
+
+In the public GitHub repository, open **Settings > Secrets and variables >
+Actions > Variables** and add:
+
+```text
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_PUBLIC_KEY
+```
+
+The Pages workflow already defaults to:
+
+```text
+NEXT_PUBLIC_BASE_PATH=/birla-opus-plant-workshop
+NEXT_PUBLIC_SITE_URL=https://abg-groupit.github.io/birla-opus-plant-workshop/
+```
+
+Add those optional variables only if the repository path or canonical URL
+changes. Do not add the raw admin capability or a Supabase secret/service-role
+key.
+
+Under **Settings > Pages**, use **GitHub Actions** as the build source. A push to
+`main` runs `.github/workflows/pages.yml`, checks lint and types, builds the
+static export, uploads `out/`, and deploys it to GitHub Pages.
+
+## 5. Verify the production workflow
+
+Use an identifiable test response, then remove or reject it after testing:
+
+1. Open the leader form, enter partial wording, save a local draft, refresh, and
+   confirm that the draft remains on that device.
+2. Complete the form and submit it. Confirm that a reference and submission time
+   appear promptly.
+3. Open the complete admin capability link. Confirm the new response appears in
+   the submitted queue.
+4. Edit the wording, save it, and approve the response.
+5. Open the presentation and confirm that the approved response appears under
+   the correct plant.
+6. Reject the response and confirm that it no longer appears in the
+   presentation.
+7. Redeploy the static site and confirm that the Supabase response still exists.
+
+The presentation read is enforced inside `workshop_public_list`, not by a query
+parameter chosen by the browser. A row cannot reach the public presentation
+until the database reports it as both approved and visible.
+
+## Optional custom domain or Vercel deployment
+
+The same static/browser architecture also works behind a custom domain or on
+Vercel. Configure the same two public Supabase values, leave
+`NEXT_PUBLIC_BASE_PATH` empty, and set `NEXT_PUBLIC_SITE_URL` to the public
+origin. The deployment does not need a Supabase service key or
+`/api/submissions` routes.
+
+The GitHub Pages URL should remain available as the compatibility route for
+company devices that block the custom domain or `vercel.app`.
+
+## Google Sheet mirror status
+
+Supabase is the authoritative store. The previous server-side webhook mirror is
+not part of the static RPC request path. If a Sheet mirror is required later,
+implement it from Supabase with a database webhook or an Edge Function so Sheet
+latency cannot delay or roll back the leader's submission.

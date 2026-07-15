@@ -1,6 +1,17 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import {
+  listAdminSubmissions,
+  listPresentationSubmissions,
+  submitWorkshopResponse,
+  updateAdminSubmission,
+} from "@/lib/browser-submission-api";
+import type {
+  AdminSubmissionUpdateInput,
+  BrowserValueStream,
+} from "@/lib/browser-submission-api";
 import {
   FormEvent,
   useCallback,
@@ -71,6 +82,13 @@ type SubmissionPatch = Partial<{
   isVisible: boolean;
 }>;
 
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+function withBasePath(path: string) {
+  if (!path.startsWith("/") || !BASE_PATH) return path;
+  return `${BASE_PATH}${path}`;
+}
+
 const PLANTS: Plant[] = [
   {
     id: "Panipat",
@@ -78,7 +96,7 @@ const PLANTS: Plant[] = [
     location: "Haryana",
     number: "01",
     accent: "#F36A36",
-    image: "/plants/panipat.jpg",
+    image: withBasePath("/plants/panipat.jpg"),
   },
   {
     id: "Ludhiana",
@@ -86,7 +104,7 @@ const PLANTS: Plant[] = [
     location: "Punjab",
     number: "02",
     accent: "#D12D73",
-    image: "/plants/ludhiana.jpg",
+    image: withBasePath("/plants/ludhiana.jpg"),
   },
   {
     id: "Cheyyar",
@@ -94,7 +112,7 @@ const PLANTS: Plant[] = [
     location: "Tamil Nadu",
     number: "03",
     accent: "#DB5737",
-    image: "/plants/cheyyar.jpg",
+    image: withBasePath("/plants/cheyyar.jpg"),
   },
   {
     id: "Chamarajanagar",
@@ -102,7 +120,7 @@ const PLANTS: Plant[] = [
     location: "Karnataka",
     number: "04",
     accent: "#13969B",
-    image: "/plants/chamarajanagar.jpg",
+    image: withBasePath("/plants/chamarajanagar.jpg"),
   },
   {
     id: "Mahad",
@@ -110,7 +128,7 @@ const PLANTS: Plant[] = [
     location: "Maharashtra",
     number: "05",
     accent: "#7152A3",
-    image: "/plants/mahad.jpg",
+    image: withBasePath("/plants/mahad.jpg"),
   },
   {
     id: "Kharagpur",
@@ -118,7 +136,7 @@ const PLANTS: Plant[] = [
     location: "West Bengal",
     number: "06",
     accent: "#EAA529",
-    image: "/plants/kharagpur.jpg",
+    image: withBasePath("/plants/kharagpur.jpg"),
   },
 ];
 
@@ -131,6 +149,7 @@ const VALUE_STREAMS = [
 ];
 
 const LOCAL_DRAFT_KEY = "birla-opus-leader-response-draft-v1";
+const ADMIN_CAPABILITY_KEY = "birla-opus-admin-capability-v1";
 
 const EMPTY_FORM: FormState = {
   plant: "Panipat",
@@ -281,11 +300,8 @@ export function WorkshopPresentation() {
   const loadSubmissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const response = await fetch("/api/submissions?presentation=true", {
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error("Unable to load responses");
-      setSubmissions(apiRows(await response.json()));
+      setSubmissions(apiRows(await listPresentationSubmissions()));
+      setNotice("");
     } catch {
       if (!silent) {
         setNotice("Responses will appear here once the data service is available.");
@@ -344,26 +360,59 @@ export function LeaderSubmission() {
 
 export function AdminReview() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [notice, setNotice] = useState("");
+  const [capability, setCapability] = useState<string | null>(null);
+  const [capabilityChecked, setCapabilityChecked] = useState(false);
 
-  const loadSubmissions = useCallback(async () => {
+  const loadSubmissions = useCallback(async (adminCapability: string) => {
     setIsLoading(true);
     try {
-      const response = await fetch("/api/submissions", { cache: "no-store" });
-      if (!response.ok) throw new Error("Unable to load responses");
-      setSubmissions(apiRows(await response.json()));
-    } catch {
-      setNotice("Responses will appear here once the data service is available.");
+      setSubmissions(apiRows(await listAdminSubmissions(adminCapability)));
+      setNotice("");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Responses could not be loaded.",
+      );
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const startup = window.setTimeout(() => void loadSubmissions(), 0);
+    const startup = window.setTimeout(() => {
+      const fragmentCapability = window.location.hash.slice(1).trim();
+      let storedCapability = "";
+      try {
+        storedCapability = window.sessionStorage.getItem(ADMIN_CAPABILITY_KEY) ?? "";
+        if (fragmentCapability) {
+          window.sessionStorage.setItem(ADMIN_CAPABILITY_KEY, fragmentCapability);
+        }
+      } catch {
+        // The URL capability still works if session storage is unavailable.
+      }
+
+      const resolvedCapability = fragmentCapability || storedCapability;
+      if (fragmentCapability) {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}`,
+        );
+      }
+      setCapability(resolvedCapability || null);
+      setCapabilityChecked(true);
+    }, 0);
     return () => window.clearTimeout(startup);
-  }, [loadSubmissions]);
+  }, []);
+
+  useEffect(() => {
+    if (!capabilityChecked || !capability) return;
+    const startup = window.setTimeout(() => void loadSubmissions(capability), 0);
+    return () => window.clearTimeout(startup);
+  }, [capability, capabilityChecked, loadSubmissions]);
 
   return (
     <main className="app-shell operational-shell">
@@ -371,10 +420,13 @@ export function AdminReview() {
       <ReviewView
         submissions={submissions}
         isLoading={isLoading}
-        notice={notice}
+        notice={notice || (capabilityChecked && !capability
+          ? "This admin link is incomplete. Open the complete private admin URL provided for the workshop."
+          : "")}
+        capability={capability}
         onChanged={async (message) => {
+          if (capability) await loadSubmissions(capability);
           setNotice(message);
-          await loadSubmissions();
         }}
       />
     </main>
@@ -405,7 +457,7 @@ function BrandIdentity({
       <span className="brand-logo-frame">
         <Image
           className="brand-logo-image"
-          src="/brand/birla-opus-logo.png"
+          src={withBasePath("/brand/birla-opus-logo.png")}
           alt="Birla Opus Paints"
           width={256}
           height={148}
@@ -555,7 +607,7 @@ function PresentationView({
         </div>
         <div className="presentation-footer">
           <span>Birla Opus · Plant Leadership Workshop</span>
-          <span>Choose any plant to begin · <a href="/credits">Photo credits</a></span>
+          <span>Choose any plant to begin · <Link href="/credits">Photo credits</Link></span>
         </div>
       </section>
     );
@@ -794,37 +846,22 @@ function SubmissionView({
     setIsSaving(true);
     setErrors([]);
     try {
-      const response = await fetch("/api/submissions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          plant: form.plant,
-          submitterName: form.submitterName,
-          submitterEmail: form.submitterEmail,
-          designation: form.designation,
-          useCases: USE_CASES.map((id) =>
-            id === form.selectedUseCase
-              ? form.useCaseDescriptions[id]?.trim() ?? ""
-              : "",
-          ),
-          valueStreams: form.valueStreams.map(
-            (stream) => String(VALUE_STREAMS.indexOf(stream) + 1),
-          ),
-          expectedBenefits: form.expectedBenefits.trim(),
-          action: "submit",
-        }),
+      const payload = await submitWorkshopResponse({
+        plant: form.plant as AdminSubmissionUpdateInput["plant"],
+        submitterName: form.submitterName,
+        submitterEmail: form.submitterEmail,
+        designation: form.designation,
+        useCases: USE_CASES.map((id) =>
+          id === form.selectedUseCase
+            ? form.useCaseDescriptions[id]?.trim() ?? ""
+            : "",
+        ) as [string, string, string, string],
+        valueStreams: [
+          String(VALUE_STREAMS.indexOf(form.valueStreams[0]) + 1) as BrowserValueStream,
+        ],
+        expectedBenefits: form.expectedBenefits.trim(),
       });
-      const payload = (await response.json()) as {
-        error?: string;
-        details?: string[];
-        id?: string;
-        referenceId?: string;
-        submission?: { id?: string; referenceId?: string; submittedAt?: string | null };
-      };
-      if (!response.ok) {
-        throw new Error(payload.details?.join(" ") ?? payload.error ?? "Save failed");
-      }
-      const reference = payload.referenceId ?? payload.submission?.referenceId ?? payload.id ?? payload.submission?.id ?? "Saved";
+      const reference = payload.submission?.referenceId ?? payload.submission?.id ?? "Saved";
       setSavedReference(reference);
       setLastSubmittedAt(payload.submission?.submittedAt ?? new Date().toISOString());
       onSaved("Response submitted for verification. You can enter another response now.");
@@ -1063,11 +1100,13 @@ function ReviewView({
   submissions,
   isLoading,
   notice,
+  capability,
   onChanged,
 }: {
   submissions: Submission[];
   isLoading: boolean;
   notice: string;
+  capability: string | null;
   onChanged: (message: string) => Promise<void>;
 }) {
   const [filter, setFilter] = useState<"all" | Status>("submitted");
@@ -1083,15 +1122,30 @@ function ReviewView({
   const selected = submissions.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
 
   const update = async (changes: SubmissionPatch, message: string) => {
-    if (!selected) return;
+    if (!selected || !capability) return;
     setIsUpdating(true);
     try {
-      const response = await fetch(`/api/submissions/${selected.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(changes),
+      const useCases = (changes.useCases ?? USE_CASES.map((id) =>
+        selected.useCases.find((item) => item.id === id)?.description ?? "",
+      )) as [string, string, string, string];
+      const selectedStreams = changes.valueStreams ?? selected.valueStreams;
+      const stream = selectedStreams[0] ?? "";
+      const valueStream = (/^[1-4]$/.test(stream)
+        ? stream
+        : String(VALUE_STREAMS.indexOf(stream) + 1)) as BrowserValueStream;
+
+      await updateAdminSubmission(capability, {
+        id: selected.id,
+        expectedUpdatedAt: selected.updatedAt,
+        plant: (changes.plant ?? selected.plant) as AdminSubmissionUpdateInput["plant"],
+        submitterName: changes.submitterName ?? selected.submitterName,
+        submitterEmail: changes.submitterEmail ?? selected.submitterEmail,
+        designation: changes.designation ?? selected.designation,
+        useCases,
+        valueStreams: [valueStream],
+        expectedBenefits: changes.expectedBenefits ?? selected.expectedBenefits,
+        status: changes.status ?? selected.status,
       });
-      if (!response.ok) throw new Error("Update failed");
       setIsEditing(false);
       await onChanged(message);
     } catch {
