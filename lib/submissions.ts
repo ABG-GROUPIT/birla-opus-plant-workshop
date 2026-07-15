@@ -9,6 +9,10 @@ import {
   getSubmissionCompletionErrors,
   requiresCompleteResponse,
 } from "@/lib/submission-validation";
+import {
+  getConfiguredSupabaseSubmissionStore,
+  queueConfiguredSubmissionMirror,
+} from "@/lib/configured-submission-backends";
 
 export const VALUE_STREAMS = ["1", "2", "3", "4"] as const;
 
@@ -19,6 +23,7 @@ export interface Submission {
   plant: PlantName;
   submitterName: string;
   submitterEmail: string;
+  designation: string;
   useCases: [string, string, string, string];
   valueStreams: ValueStream[];
   expectedBenefits: string;
@@ -35,6 +40,7 @@ interface SubmissionRow {
   plant: PlantName;
   submitter_name: string;
   submitter_email: string;
+  designation: string;
   use_case_1: string;
   use_case_2: string;
   use_case_3: string;
@@ -56,6 +62,7 @@ interface CreateSubmissionInput {
   plant: PlantName;
   submitterName: string;
   submitterEmail: string;
+  designation: string;
   useCases: [string, string, string, string];
   valueStreams: ValueStream[];
   expectedBenefits: string;
@@ -66,6 +73,7 @@ interface UpdateSubmissionInput {
   plant?: PlantName;
   submitterName?: string;
   submitterEmail?: string;
+  designation?: string;
   useCases?: [string, string, string, string];
   valueStreams?: ValueStream[];
   expectedBenefits?: string;
@@ -89,6 +97,7 @@ SELECT
   plant,
   submitter_name,
   submitter_email,
+  designation,
   use_case_1,
   use_case_2,
   use_case_3,
@@ -232,6 +241,7 @@ function parseBoolean(value: unknown, field: string): boolean {
 function assertComplete(submission: {
   submitterName: string;
   submitterEmail: string;
+  designation: string;
   useCases: readonly string[];
   valueStreams: readonly ValueStream[];
   expectedBenefits: string;
@@ -263,6 +273,7 @@ function mapRow(row: SubmissionRow): Submission {
     plant: row.plant,
     submitterName: row.submitter_name,
     submitterEmail: row.submitter_email,
+    designation: row.designation,
     useCases: [row.use_case_1, row.use_case_2, row.use_case_3, row.use_case_4],
     valueStreams,
     expectedBenefits: row.expected_benefits,
@@ -297,6 +308,7 @@ export function parseCreateSubmission(value: unknown): CreateSubmissionInput {
     plant: parsePlant(value.plant),
     submitterName: parseString(value.submitterName, "submitterName", 120),
     submitterEmail: parseString(value.submitterEmail, "submitterEmail", 254),
+    designation: parseString(value.designation, "designation", 160),
     useCases: parseUseCases(value.useCases),
     valueStreams: parseValueStreams(value.valueStreams),
     expectedBenefits: parseString(
@@ -323,6 +335,7 @@ export function parseUpdateSubmission(value: unknown): UpdateSubmissionInput {
     "plant",
     "submitterName",
     "submitterEmail",
+    "designation",
     "useCases",
     "valueStreams",
     "expectedBenefits",
@@ -341,6 +354,9 @@ export function parseUpdateSubmission(value: unknown): UpdateSubmissionInput {
   }
   if (hasOwn(value, "submitterEmail")) {
     input.submitterEmail = parseString(value.submitterEmail, "submitterEmail", 254);
+  }
+  if (hasOwn(value, "designation")) {
+    input.designation = parseString(value.designation, "designation", 160);
   }
   if (hasOwn(value, "useCases")) input.useCases = parseUseCases(value.useCases);
   if (hasOwn(value, "valueStreams")) {
@@ -384,11 +400,35 @@ export function parseBooleanFilter(
 export async function createSubmission(
   input: CreateSubmissionInput,
 ): Promise<Submission> {
-  const database = await getDatabase();
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const status: SubmissionStatus =
     input.action === "submit" ? "submitted" : "draft";
+  const pending: Submission = {
+    id,
+    plant: input.plant,
+    submitterName: input.submitterName,
+    submitterEmail: input.submitterEmail,
+    designation: input.designation,
+    useCases: input.useCases,
+    valueStreams: input.valueStreams,
+    expectedBenefits: input.expectedBenefits,
+    status,
+    isVisible: false,
+    createdAt: now,
+    updatedAt: now,
+    submittedAt: status === "submitted" ? now : null,
+    reviewedAt: null,
+  };
+
+  const externalStore = getConfiguredSupabaseSubmissionStore();
+  if (externalStore) {
+    const created = await externalStore.create(pending);
+    queueConfiguredSubmissionMirror("submission.created", created);
+    return created;
+  }
+
+  const database = await getDatabase();
   const selected = new Set<ValueStream>(input.valueStreams);
 
   await database
@@ -398,6 +438,7 @@ INSERT INTO workshop_submissions (
   plant,
   submitter_name,
   submitter_email,
+  designation,
   use_case_1,
   use_case_2,
   use_case_3,
@@ -414,13 +455,14 @@ INSERT INTO workshop_submissions (
   submitted_at,
   reviewed_at
 ) VALUES (
-  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0, ?15, ?15, ?16, NULL
+  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0, ?16, ?16, ?17, NULL
 )`)
     .bind(
       id,
       input.plant,
       input.submitterName,
       input.submitterEmail,
+      input.designation,
       input.useCases[0],
       input.useCases[1],
       input.useCases[2],
@@ -441,10 +483,21 @@ INSERT INTO workshop_submissions (
     throw new Error("The response was saved but could not be read back");
   }
 
-  return mapRow(created);
+  const submission = mapRow(created);
+  queueConfiguredSubmissionMirror("submission.created", submission);
+  return submission;
 }
 
 export async function getSubmission(id: string): Promise<Submission> {
+  const externalStore = getConfiguredSupabaseSubmissionStore();
+  if (externalStore) {
+    const submission = await externalStore.get(id);
+    if (!submission) {
+      throw new SubmissionError("Response not found", 404);
+    }
+    return submission;
+  }
+
   const row = await findSubmissionRow(id);
   if (!row) {
     throw new SubmissionError("Response not found", 404);
@@ -455,6 +508,11 @@ export async function getSubmission(id: string): Promise<Submission> {
 export async function listSubmissions(
   filters: SubmissionFilters,
 ): Promise<Submission[]> {
+  const externalStore = getConfiguredSupabaseSubmissionStore();
+  if (externalStore) {
+    return externalStore.list(filters);
+  }
+
   const database = await getDatabase();
   const clauses: string[] = [];
   const bindings: Array<string | number> = [];
@@ -512,7 +570,9 @@ export async function updateSubmission(
     );
   }
 
-  if (next.status !== "approved") {
+  if (input.status === "approved") {
+    next.isVisible = true;
+  } else if (next.status !== "approved") {
     next.isVisible = false;
   }
 
@@ -524,6 +584,19 @@ export async function updateSubmission(
     next.reviewedAt = now;
   }
 
+  const externalStore = getConfiguredSupabaseSubmissionStore();
+  if (externalStore) {
+    const updated = await externalStore.update(next, existing.updatedAt);
+    if (!updated) {
+      throw new SubmissionError(
+        "This response changed while it was being updated. Refresh and try again.",
+        409,
+      );
+    }
+    queueConfiguredSubmissionMirror("submission.updated", updated);
+    return updated;
+  }
+
   const selected = new Set<ValueStream>(next.valueStreams);
   const database = await getDatabase();
   const result = await database
@@ -533,25 +606,27 @@ SET
   plant = ?1,
   submitter_name = ?2,
   submitter_email = ?3,
-  use_case_1 = ?4,
-  use_case_2 = ?5,
-  use_case_3 = ?6,
-  use_case_4 = ?7,
-  value_stream_1_selected = ?8,
-  value_stream_2_selected = ?9,
-  value_stream_3_selected = ?10,
-  value_stream_4_selected = ?11,
-  expected_benefits = ?12,
-  status = ?13,
-  is_visible = ?14,
-  updated_at = ?15,
-  submitted_at = ?16,
-  reviewed_at = ?17
-WHERE id = ?18 AND updated_at = ?19`)
+  designation = ?4,
+  use_case_1 = ?5,
+  use_case_2 = ?6,
+  use_case_3 = ?7,
+  use_case_4 = ?8,
+  value_stream_1_selected = ?9,
+  value_stream_2_selected = ?10,
+  value_stream_3_selected = ?11,
+  value_stream_4_selected = ?12,
+  expected_benefits = ?13,
+  status = ?14,
+  is_visible = ?15,
+  updated_at = ?16,
+  submitted_at = ?17,
+  reviewed_at = ?18
+WHERE id = ?19 AND updated_at = ?20`)
     .bind(
       next.plant,
       next.submitterName,
       next.submitterEmail,
+      next.designation,
       next.useCases[0],
       next.useCases[1],
       next.useCases[2],
@@ -578,7 +653,9 @@ WHERE id = ?18 AND updated_at = ?19`)
     );
   }
 
-  return getSubmission(id);
+  const updated = await getSubmission(id);
+  queueConfiguredSubmissionMirror("submission.updated", updated);
+  return updated;
 }
 
 export function submissionErrorResponse(error: unknown): Response {

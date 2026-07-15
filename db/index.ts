@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS workshop_submissions (
   plant text NOT NULL,
   submitter_name text DEFAULT '' NOT NULL,
   submitter_email text DEFAULT '' NOT NULL,
+  designation text DEFAULT '' NOT NULL,
   use_case_1 text DEFAULT '' NOT NULL,
   use_case_2 text DEFAULT '' NOT NULL,
   use_case_3 text DEFAULT '' NOT NULL,
@@ -34,6 +35,20 @@ const CREATE_STATUS_VISIBILITY_INDEX =
   "CREATE INDEX IF NOT EXISTS workshop_submissions_status_visibility_idx ON workshop_submissions (status, is_visible)";
 const CREATE_CREATED_AT_INDEX =
   "CREATE INDEX IF NOT EXISTS workshop_submissions_created_at_idx ON workshop_submissions (created_at)";
+
+async function ensureDesignationColumn(database: D1Database): Promise<void> {
+  const columns = await database
+    .prepare("PRAGMA table_info(workshop_submissions)")
+    .all<{ name: string }>();
+
+  if (!(columns.results ?? []).some((column: { name: string }) => column.name === "designation")) {
+    await database
+      .prepare(
+        "ALTER TABLE workshop_submissions ADD COLUMN designation text DEFAULT '' NOT NULL",
+      )
+      .run();
+  }
+}
 
 const initializationByBinding = new WeakMap<D1Database, Promise<void>>();
 
@@ -70,7 +85,7 @@ export async function getDatabase(): Promise<D1Database> {
       database.prepare(CREATE_STATUS_VISIBILITY_INDEX),
       database.prepare(CREATE_CREATED_AT_INDEX),
     ])
-    .then(() => undefined)
+    .then(() => ensureDesignationColumn(database))
     .catch((error: unknown) => {
       initializationByBinding.delete(database);
       throw error;

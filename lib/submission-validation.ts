@@ -1,6 +1,7 @@
 export interface SubmissionCompletionInput {
   submitterName: string;
   submitterEmail: string;
+  designation: string;
   useCases: readonly string[];
   valueStreams: readonly string[];
   expectedBenefits: string;
@@ -29,6 +30,9 @@ export function getSubmissionCompletionErrors(
   } else if (!EMAIL_PATTERN.test(submission.submitterEmail)) {
     details.push("submitterEmail must be a valid email address");
   }
+  if (!submission.designation) {
+    details.push("designation is required");
+  }
 
   const describedUseCaseCount = submission.useCases.filter(
     (description) => description.trim().length > 0,
@@ -40,7 +44,9 @@ export function getSubmissionCompletionErrors(
   }
 
   if (submission.valueStreams.length === 0) {
-    details.push("Select at least one value stream");
+    details.push("Select one value stream");
+  } else if (submission.valueStreams.length > 1) {
+    details.push("Only one value stream may be selected");
   }
   if (!submission.expectedBenefits) {
     details.push("expectedBenefits is required");

@@ -27,6 +27,7 @@ export const workshopSubmissions = sqliteTable(
     plant: text("plant").$type<PlantName>().notNull(),
     submitterName: text("submitter_name").notNull().default(""),
     submitterEmail: text("submitter_email").notNull().default(""),
+    designation: text("designation").notNull().default(""),
     useCase1: text("use_case_1").notNull().default(""),
     useCase2: text("use_case_2").notNull().default(""),
     useCase3: text("use_case_3").notNull().default(""),

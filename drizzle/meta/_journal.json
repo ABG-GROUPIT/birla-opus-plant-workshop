@@ -8,6 +8,13 @@
       "when": 1784113565461,
       "tag": "0000_daily_titania",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784145478117,
+      "tag": "0001_whole_talisman",
+      "breakpoints": true
     }
   ]
 }

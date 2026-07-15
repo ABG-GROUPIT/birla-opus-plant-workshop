@@ -1,8 +1,9 @@
-# vinext-starter
+# Birla Opus Plant Workshop Canvas
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+A six-plant workshop website for collecting leader responses, reviewing them,
+and presenting only approved ideas. It runs on
+[vinext](https://github.com/cloudflare/vinext), with a zero-config D1 preview
+and a production Supabase/Postgres option.
 
 ## Prerequisites
 
@@ -16,16 +17,12 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Application routes
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- `/` — presentation-only workshop surface
+- `/submit` — public leader response form with a device-local draft
+- `/admin` — review, direct editing, approval, and rejection
+- `/credits` — regional photo attribution
 
 ## Workshop Submission Contract
 
@@ -34,10 +31,18 @@ This starter does not use `wrangler.jsonc`.
 - A submitted or approved response must contain a description in exactly one
   use-case position. The non-empty position is the selected fixed use case.
 - Drafts may be saved before that selection and description are complete.
-- `valueStreams` contains one or more fixed values (`"1"` through `"4"`) once
-  a response is submitted or approved.
-- The existing four use-case columns encode this contract directly, so this
-  change does not require a database migration.
+- `valueStreams` contains exactly one fixed value (`"1"` through `"4"`) once a
+  response is submitted or approved.
+- The four use-case columns encode the selected slot directly; the production
+  Supabase schema keeps the same representation.
+
+## Production persistence
+
+Local/demo runs continue to use the configured D1 database with no additional
+credentials. Production can switch the same submission API to private
+Supabase/Postgres storage and optionally mirror successful writes to Google
+Sheets. See [Submission backend setup](docs/backend-setup.md) for the migration,
+runtime values, security boundary, and deployment checklist.
 
 ## Workspace Auth Headers
 

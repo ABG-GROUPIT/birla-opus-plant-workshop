@@ -9,6 +9,7 @@ import {
 const completeResponse = {
   submitterName: "Plant leader",
   submitterEmail: "leader@example.com",
+  designation: "Plant Head",
   useCases: ["", "Short use-case description", "", ""],
   valueStreams: ["1"],
   expectedBenefits: "A measurable expected benefit.",
@@ -43,18 +44,24 @@ test("rejects responses with descriptions in multiple use-case slots", () => {
   assert.ok(errors.includes("Only one use case may have a description"));
 });
 
-test("keeps value streams as one-or-more fixed selections", () => {
-  assert.deepEqual(
-    getSubmissionCompletionErrors({
-      ...completeResponse,
-      valueStreams: ["1", "4"],
-    }),
-    [],
-  );
-
+test("requires exactly one fixed value stream", () => {
   const errors = getSubmissionCompletionErrors({
     ...completeResponse,
     valueStreams: [],
   });
-  assert.ok(errors.includes("Select at least one value stream"));
+  assert.ok(errors.includes("Select one value stream"));
+
+  const multipleErrors = getSubmissionCompletionErrors({
+    ...completeResponse,
+    valueStreams: ["1", "4"],
+  });
+  assert.ok(multipleErrors.includes("Only one value stream may be selected"));
+});
+
+test("requires the leader designation", () => {
+  const errors = getSubmissionCompletionErrors({
+    ...completeResponse,
+    designation: "",
+  });
+  assert.ok(errors.includes("designation is required"));
 });

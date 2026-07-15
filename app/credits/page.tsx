@@ -1,59 +1,61 @@
+import Link from "next/link";
+
 const credits = [
   {
     plant: "Panipat",
-    creator: "L&T Panipat Elevated Corridor Limited",
-    licence: "CC BY-SA 4.0",
-    href: "https://commons.wikimedia.org/wiki/File:Panipat-elevated-corridor.jpg",
+    region: "Haryana",
+    creator: "puneet kumar",
+    href: "https://unsplash.com/photos/QVGflrSGD9o",
   },
   {
     plant: "Ludhiana",
-    creator: "Benison P Baby",
-    licence: "CC BY-SA 4.0",
-    href: "https://commons.wikimedia.org/wiki/File:Ludhiana_skyline.jpg",
+    region: "Punjab",
+    creator: "Abhinav Sharma",
+    href: "https://unsplash.com/photos/YtEb5M_1nOc",
   },
   {
     plant: "Cheyyar",
-    creator: "Meter mexico",
-    licence: "CC BY-SA 4.0",
-    href: "https://commons.wikimedia.org/wiki/File:Vedhapureshwar_temple_at_bank_of_cheyyar_river.jpg",
+    region: "Tamil Nadu",
+    creator: "cymatics .in",
+    href: "https://unsplash.com/photos/U-5qN1L0qHk",
   },
   {
     plant: "Chamarajanagar",
-    creator: "Kalyan Varma",
-    licence: "CC BY-SA 4.0",
-    href: "https://commons.wikimedia.org/wiki/File:BR_Hills_Landscape_DSC_5585.jpg",
+    region: "Karnataka",
+    creator: "Amit K",
+    href: "https://unsplash.com/photos/z6f8YJv1VTQ",
   },
   {
     plant: "Mahad",
-    creator: "Sanketr3392",
-    licence: "CC BY-SA 4.0",
-    href: "https://commons.wikimedia.org/wiki/File:Waterfalls_of_Shivathar_ghalai%2C_Mahad-Raigad.jpg",
+    region: "Maharashtra",
+    creator: "Zoshua Colah",
+    href: "https://unsplash.com/photos/5nZQuot4HFA",
   },
   {
     plant: "Kharagpur",
-    creator: "Ambuj Saxena",
-    licence: "CC BY 2.5",
-    href: "https://commons.wikimedia.org/wiki/File:IIT_Kharagpur_Main_Building.JPG",
+    region: "West Bengal",
+    creator: "Jayanta Kr Golder",
+    href: "https://unsplash.com/photos/8g2XxmjPpvs",
   },
 ];
 
 export default function CreditsPage() {
   return (
     <main className="credits-page">
-      <a className="credits-back" href="/">← Back to Workshop Canvas</a>
+      <Link className="credits-back" href="/">← Back to Workshop Canvas</Link>
       <p className="eyebrow">Image attribution</p>
       <h1>Photo credits</h1>
       <p className="credits-intro">
-        Location photography is sourced from Wikimedia Commons and displayed
-        with light cropping for the plant-selection experience.
+        Regional landscape photography is sourced from Unsplash and displayed
+        with responsive cropping under the Unsplash License.
       </p>
       <div className="credits-list">
         {credits.map((credit, index) => (
           <a href={credit.href} key={credit.plant} target="_blank" rel="noreferrer">
             <span>{String(index + 1).padStart(2, "0")}</span>
             <strong>{credit.plant}</strong>
-            <small>{credit.creator}</small>
-            <b>{credit.licence} ↗</b>
+            <small>{credit.region} · {credit.creator}</small>
+            <b>Unsplash License ↗</b>
           </a>
         ))}
       </div>

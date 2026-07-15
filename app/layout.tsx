@@ -32,6 +32,10 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(origin),
     title,
     description,
+    icons: {
+      icon: "/brand/birla-opus-mark.png",
+      apple: "/brand/birla-opus-mark.png",
+    },
     openGraph: {
       title,
       description,

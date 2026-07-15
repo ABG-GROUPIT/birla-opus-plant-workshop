@@ -10,8 +10,14 @@ test("contains the compact Birla Opus presentation experience", async () => {
   assert.match(canvas, /One workshop/);
   assert.match(canvas, /Six points of view/);
   assert.match(canvas, /Chosen use case/);
-  assert.match(canvas, /Selected value streams/);
+  assert.match(canvas, /Selected value stream/);
   assert.match(canvas, /Primary workshop outcome/);
+  assert.match(canvas, /Designation \/ role/);
+  assert.match(canvas, /Recorded automatically on submission/);
+  assert.match(canvas, /Draft saved on this device/);
+  assert.match(canvas, /Edit response/);
+  assert.match(canvas, /Approve response/);
+  assert.match(canvas, /Reject response/);
   assert.match(canvas, /SubmissionView/);
   assert.match(canvas, /ReviewView/);
   assert.match(canvas, /PresentationView/);

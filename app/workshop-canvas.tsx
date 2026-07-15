@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   FormEvent,
   useCallback,
@@ -24,6 +25,7 @@ type Submission = {
   plant: string;
   submitterName: string;
   submitterEmail: string;
+  designation: string;
   useCases: Array<{ id: string; description: string }>;
   valueStreams: string[];
   expectedBenefits: string;
@@ -31,6 +33,7 @@ type Submission = {
   isVisible: boolean;
   createdAt: string;
   updatedAt: string;
+  submittedAt: string | null;
   referenceId?: string;
 };
 
@@ -38,11 +41,35 @@ type FormState = {
   plant: string;
   submitterName: string;
   submitterEmail: string;
+  designation: string;
   selectedUseCase: string;
   useCaseDescriptions: Record<string, string>;
   valueStreams: string[];
   expectedBenefits: string;
 };
+
+type AdminEditState = {
+  plant: string;
+  submitterName: string;
+  submitterEmail: string;
+  designation: string;
+  selectedUseCase: string;
+  useCaseDescription: string;
+  valueStream: string;
+  expectedBenefits: string;
+};
+
+type SubmissionPatch = Partial<{
+  plant: string;
+  submitterName: string;
+  submitterEmail: string;
+  designation: string;
+  useCases: string[];
+  valueStreams: string[];
+  expectedBenefits: string;
+  status: Status;
+  isVisible: boolean;
+}>;
 
 const PLANTS: Plant[] = [
   {
@@ -103,10 +130,13 @@ const VALUE_STREAMS = [
   "Value Stream 4",
 ];
 
+const LOCAL_DRAFT_KEY = "birla-opus-leader-response-draft-v1";
+
 const EMPTY_FORM: FormState = {
   plant: "Panipat",
   submitterName: "",
   submitterEmail: "",
+  designation: "",
   selectedUseCase: "",
   useCaseDescriptions: {},
   valueStreams: [],
@@ -121,6 +151,7 @@ function normaliseSubmission(value: Partial<Submission>): Submission {
     plant: String(value.plant ?? "Panipat"),
     submitterName: String(value.submitterName ?? "Workshop leader"),
     submitterEmail: String(value.submitterEmail ?? ""),
+    designation: String(value.designation ?? ""),
     useCases: rawUseCases.map((item, index) => {
       if (typeof item === "string") {
         return { id: USE_CASES[index] ?? `Use Case ${index + 1}`, description: item };
@@ -141,6 +172,7 @@ function normaliseSubmission(value: Partial<Submission>): Submission {
     isVisible: Boolean(value.isVisible),
     createdAt: String(value.createdAt ?? new Date().toISOString()),
     updatedAt: String(value.updatedAt ?? value.createdAt ?? new Date().toISOString()),
+    submittedAt: value.submittedAt ? String(value.submittedAt) : null,
   };
 }
 
@@ -166,6 +198,21 @@ function formatDate(value: string) {
   }
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return "Not submitted yet";
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return "Not available";
+  }
+}
+
 function statusLabel(status: Status) {
   if (status === "rejected") return "Needs changes";
   if (status === "submitted") return "Submitted";
@@ -177,16 +224,48 @@ function getPlant(id: string) {
   return PLANTS.find((plant) => plant.id === id) ?? PLANTS[0];
 }
 
+function chosenUseCase(submission: Submission | null) {
+  return submission?.useCases.find(
+    (item) => item.description.trim().length > 0,
+  ) ?? null;
+}
+
+function adminEditState(submission: Submission): AdminEditState {
+  const useCase = chosenUseCase(submission);
+  return {
+    plant: submission.plant,
+    submitterName: submission.submitterName,
+    submitterEmail: submission.submitterEmail,
+    designation: submission.designation,
+    selectedUseCase: useCase?.id ?? USE_CASES[0],
+    useCaseDescription: useCase?.description ?? "",
+    valueStream: submission.valueStreams[0] ?? VALUE_STREAMS[0],
+    expectedBenefits: submission.expectedBenefits,
+  };
+}
+
+function hasLocalDraftContent(form: FormState) {
+  return Boolean(
+    form.submitterName.trim() ||
+      form.submitterEmail.trim() ||
+      form.designation.trim() ||
+      form.selectedUseCase ||
+      form.valueStreams.length ||
+      form.expectedBenefits.trim(),
+  );
+}
+
 function completion(form: FormState) {
   const checks = [
     Boolean(form.plant),
     Boolean(form.submitterName.trim()),
     Boolean(form.submitterEmail.trim()),
+    Boolean(form.designation.trim()),
     Boolean(
       form.selectedUseCase &&
         form.useCaseDescriptions[form.selectedUseCase]?.trim(),
     ),
-    form.valueStreams.length > 0,
+    form.valueStreams.length === 1,
     Boolean(form.expectedBenefits.trim()),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
@@ -217,13 +296,14 @@ export function WorkshopPresentation() {
   }, []);
 
   useEffect(() => {
-    void loadSubmissions();
+    const startup = window.setTimeout(() => void loadSubmissions(), 0);
     const interval = window.setInterval(() => void loadSubmissions(true), 12_000);
     const handleVisibility = () => {
       if (document.visibilityState === "visible") void loadSubmissions(true);
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
+      window.clearTimeout(startup);
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
@@ -281,7 +361,8 @@ export function AdminReview() {
   }, []);
 
   useEffect(() => {
-    void loadSubmissions();
+    const startup = window.setTimeout(() => void loadSubmissions(), 0);
+    return () => window.clearTimeout(startup);
   }, [loadSubmissions]);
 
   return (
@@ -303,22 +384,37 @@ export function AdminReview() {
 function SurfaceHeader({ context }: { context: string }) {
   return (
     <header className="site-header surface-header">
-      <div className="brand surface-brand">
-        <span className="brand-mark" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-        <span>
-          <strong>Birla Opus</strong>
-          <small>Plant Workshop Canvas</small>
-        </span>
-      </div>
+      <BrandIdentity context="Plant Workshop Canvas" />
       <div className="header-note">
         <span className="live-dot" />
         {context}
       </div>
     </header>
+  );
+}
+
+function BrandIdentity({
+  context,
+  presentation = false,
+}: {
+  context: string;
+  presentation?: boolean;
+}) {
+  return (
+    <div className={`brand-identity${presentation ? " presentation-identity" : ""}`}>
+      <span className="brand-logo-frame">
+        <Image
+          className="brand-logo-image"
+          src="/brand/birla-opus-logo.png"
+          alt="Birla Opus Paints"
+          width={256}
+          height={148}
+          priority={presentation}
+          unoptimized
+        />
+      </span>
+      <span className="brand-context">{context}</span>
+    </div>
   );
 }
 
@@ -356,9 +452,17 @@ function PresentationView({
     [activePlant, onPlantChange],
   );
 
-  const plantResponses = activePlant
-    ? published.filter((item) => item.plant === activePlant)
-    : [];
+  const plantResponses = useMemo(() => {
+    if (!activePlant) return [];
+    return published
+      .filter((item) => item.plant === activePlant)
+      .sort((left, right) => {
+        const leftIndex = USE_CASES.indexOf(chosenUseCase(left)?.id ?? "");
+        const rightIndex = USE_CASES.indexOf(chosenUseCase(right)?.id ?? "");
+        if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+        return left.createdAt.localeCompare(right.createdAt);
+      });
+  }, [activePlant, published]);
 
   const moveResponse = useCallback(
     (direction: number) => {
@@ -373,12 +477,29 @@ function PresentationView({
   useEffect(() => {
     if (!activePlant) return;
     const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onExit();
+      if (event.key === "Escape") {
+        onExit();
+        return;
+      }
+      if (event.key.toLowerCase() === "f") {
+        void document.documentElement.requestFullscreen?.();
+        return;
+      }
+      const withinScrollRegion =
+        event.target instanceof HTMLElement &&
+        Boolean(event.target.closest("[data-presentation-scroll]"));
+      if (
+        withinScrollRegion &&
+        ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(
+          event.key,
+        )
+      ) {
+        return;
+      }
       if (event.key === "ArrowLeft") moveResponse(-1);
       if (event.key === "ArrowRight") moveResponse(1);
       if (event.key === "ArrowUp") movePlant(-1);
       if (event.key === "ArrowDown") movePlant(1);
-      if (event.key.toLowerCase() === "f") void document.documentElement.requestFullscreen?.();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -388,17 +509,11 @@ function PresentationView({
     return (
       <section className="presentation-index">
         <div className="presentation-brandline">
-          <span className="brand-mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <strong>Birla Opus</strong>
-          <span>Plant Leadership Workshop</span>
+          <BrandIdentity context="Plant Leadership Workshop" presentation />
         </div>
         <div className="presentation-intro">
           <div>
-            <p className="eyebrow light">Presentation mode · Six plants</p>
+            <p className="eyebrow">Presentation mode · Six plants</p>
             <h1>One workshop.<br />Six points of view.</h1>
           </div>
           <div className="intro-copy">
@@ -448,9 +563,7 @@ function PresentationView({
 
   const plant = getPlant(activePlant);
   const response = plantResponses[responseIndex] ?? null;
-  const chosenUseCase = response?.useCases.find(
-    (item) => item.description.trim().length > 0,
-  );
+  const activeUseCase = chosenUseCase(response);
 
   return (
     <section className="plant-presentation" style={{ "--plant-accent": plant.accent } as React.CSSProperties}>
@@ -460,8 +573,10 @@ function PresentationView({
           backgroundImage: `linear-gradient(90deg, rgba(18,12,23,.88) 0%, rgba(18,12,23,.3) 68%, rgba(18,12,23,.7) 100%), url("${plant.image}")`,
         }}
       >
-        <button className="back-link" type="button" onClick={onExit}>← All plants</button>
-        <div className="hero-brand">Birla Opus · Plant Leadership Workshop</div>
+        <div className="hero-identity">
+          <BrandIdentity context="Plant Leadership Workshop" presentation />
+          <button className="back-link" type="button" onClick={onExit}>← All plants</button>
+        </div>
         <div className="plant-hero-copy">
           <p className="eyebrow light">Plant {plant.number} · {plant.location}</p>
           <h1>{plant.name}</h1>
@@ -471,7 +586,12 @@ function PresentationView({
                 ? `Response ${String(responseIndex + 1).padStart(2, "0")} of ${String(plantResponses.length).padStart(2, "0")}`
                 : "No response published"}
             </span>
-            {response && <span>Submitted by {response.submitterName}</span>}
+            {response && (
+              <span>
+                {activeUseCase?.id ?? "Use case"} · {response.submitterName}
+                {response.designation ? `, ${response.designation}` : ""}
+              </span>
+            )}
           </div>
         </div>
         <div className="hero-controls">
@@ -496,18 +616,24 @@ function PresentationView({
                 <div className="selected-use-case-heading">
                   <span>
                     {String(
-                      Math.max(1, USE_CASES.indexOf(chosenUseCase?.id ?? "") + 1),
+                      Math.max(1, USE_CASES.indexOf(activeUseCase?.id ?? "") + 1),
                     ).padStart(2, "0")}
                   </span>
-                  <h2>{chosenUseCase?.id ?? "Use case"}</h2>
+                  <h2>{activeUseCase?.id ?? "Use case"}</h2>
                 </div>
-                <p className="selected-use-case-description">
-                  {chosenUseCase?.description ?? "No use-case description supplied."}
+                <p
+                  className="selected-use-case-description"
+                  data-presentation-scroll
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Use case description"
+                >
+                  {activeUseCase?.description ?? "No use-case description supplied."}
                 </p>
               </article>
 
               <div className="value-stream-summary">
-                <p className="eyebrow">Selected value streams</p>
+                <p className="eyebrow">Selected value stream</p>
                 <div className="stream-sentence">
                   {response.valueStreams.map((stream) => (
                     <span key={stream}>{stream}</span>
@@ -524,7 +650,13 @@ function PresentationView({
                 </div>
                 <span>03</span>
               </div>
-              <div className="expected-benefits-copy">
+              <div
+                className="expected-benefits-copy"
+                data-presentation-scroll
+                tabIndex={0}
+                role="region"
+                aria-label="Expected benefits"
+              >
                 <span className="benefit-mark" aria-hidden="true">＋</span>
                 <blockquote
                   className={
@@ -582,15 +714,62 @@ function SubmissionView({
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [savedReference, setSavedReference] = useState("");
+  const [lastSubmittedAt, setLastSubmittedAt] = useState<string | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
   const active = getPlant(form.plant);
   const percent = completion(form);
 
-  const toggleValueStream = (value: string) => {
+  useEffect(() => {
+    const restoreTimer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(LOCAL_DRAFT_KEY);
+        if (stored) {
+          const draft = JSON.parse(stored) as Partial<FormState>;
+          const selectedUseCase = USE_CASES.includes(draft.selectedUseCase ?? "")
+            ? draft.selectedUseCase ?? ""
+            : "";
+          const descriptions =
+            draft.useCaseDescriptions && typeof draft.useCaseDescriptions === "object"
+              ? draft.useCaseDescriptions
+              : {};
+          setForm({
+            plant: PLANTS.some((plant) => plant.id === draft.plant)
+              ? String(draft.plant)
+              : EMPTY_FORM.plant,
+            submitterName: String(draft.submitterName ?? ""),
+            submitterEmail: String(draft.submitterEmail ?? ""),
+            designation: String(draft.designation ?? ""),
+            selectedUseCase,
+            useCaseDescriptions: descriptions,
+            valueStreams: Array.isArray(draft.valueStreams)
+              ? draft.valueStreams.filter((stream) => VALUE_STREAMS.includes(stream)).slice(0, 1)
+              : [],
+            expectedBenefits: String(draft.expectedBenefits ?? ""),
+          });
+          onSaved("Your saved draft was restored on this device.");
+        }
+      } catch {
+        window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+      } finally {
+        setDraftReady(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(restoreTimer);
+  }, [onSaved]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    if (hasLocalDraftContent(form)) {
+      window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(form));
+    } else {
+      window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+    }
+  }, [draftReady, form]);
+
+  const selectValueStream = (value: string) => {
     setForm((current) => ({
       ...current,
-      valueStreams: current.valueStreams.includes(value)
-        ? current.valueStreams.filter((item) => item !== value)
-        : [...current.valueStreams, value],
+      valueStreams: [value],
     }));
   };
 
@@ -598,19 +777,20 @@ function SubmissionView({
     const next: string[] = [];
     if (!form.submitterName.trim()) next.push("Add the leader’s name.");
     if (!/^\S+@\S+\.\S+$/.test(form.submitterEmail)) next.push("Add a valid email address.");
+    if (!form.designation.trim()) next.push("Add the leader's designation or role.");
     if (!form.selectedUseCase) {
       next.push("Choose one use case.");
     } else if (!form.useCaseDescriptions[form.selectedUseCase]?.trim()) {
       next.push("Add a short description for the chosen use case.");
     }
-    if (!form.valueStreams.length) next.push("Select at least one value stream.");
+    if (form.valueStreams.length !== 1) next.push("Select one value stream.");
     if (!form.expectedBenefits.trim()) next.push("Describe the expected benefits.");
     setErrors(next);
     return next.length === 0;
   };
 
-  const save = async (action: "draft" | "submit") => {
-    if (action === "submit" && !validate()) return;
+  const submit = async () => {
+    if (!validate()) return;
     setIsSaving(true);
     setErrors([]);
     try {
@@ -621,6 +801,7 @@ function SubmissionView({
           plant: form.plant,
           submitterName: form.submitterName,
           submitterEmail: form.submitterEmail,
+          designation: form.designation,
           useCases: USE_CASES.map((id) =>
             id === form.selectedUseCase
               ? form.useCaseDescriptions[id]?.trim() ?? ""
@@ -630,15 +811,25 @@ function SubmissionView({
             (stream) => String(VALUE_STREAMS.indexOf(stream) + 1),
           ),
           expectedBenefits: form.expectedBenefits.trim(),
-          action,
+          action: "submit",
         }),
       });
-      if (!response.ok) throw new Error("Save failed");
-      const payload = (await response.json()) as { id?: string; referenceId?: string; submission?: { id?: string; referenceId?: string } };
+      const payload = (await response.json()) as {
+        error?: string;
+        details?: string[];
+        id?: string;
+        referenceId?: string;
+        submission?: { id?: string; referenceId?: string; submittedAt?: string | null };
+      };
+      if (!response.ok) {
+        throw new Error(payload.details?.join(" ") ?? payload.error ?? "Save failed");
+      }
       const reference = payload.referenceId ?? payload.submission?.referenceId ?? payload.id ?? payload.submission?.id ?? "Saved";
       setSavedReference(reference);
-      onSaved(action === "draft" ? "Draft saved safely." : "Response submitted for verification.");
-      if (action === "submit") setForm(EMPTY_FORM);
+      setLastSubmittedAt(payload.submission?.submittedAt ?? new Date().toISOString());
+      onSaved("Response submitted for verification. You can enter another response now.");
+      window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+      setForm(EMPTY_FORM);
     } catch {
       setErrors(["We could not save this response. Your entries are still on screen—please try again."]);
     } finally {
@@ -646,9 +837,17 @@ function SubmissionView({
     }
   };
 
+  const saveLocalDraft = () => {
+    window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(form));
+    setErrors([]);
+    setSavedReference("");
+    setLastSubmittedAt(null);
+    onSaved("Draft saved on this device.");
+  };
+
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
-    void save("submit");
+    void submit();
   };
 
   return (
@@ -694,7 +893,13 @@ function SubmissionView({
         </aside>
 
         <form className="response-form" onSubmit={submitForm}>
-          {notice && <div className="form-success" role="status">{notice}{savedReference && ` Reference: ${savedReference}`}</div>}
+          {notice && (
+            <div className="form-success" role="status">
+              {notice}
+              {savedReference && ` Reference: ${savedReference}.`}
+              {lastSubmittedAt && ` Submitted: ${formatDateTime(lastSubmittedAt)}.`}
+            </div>
+          )}
           {errors.length > 0 && (
             <div className="form-errors" role="alert">
               <strong>Please complete the response</strong>
@@ -736,12 +941,27 @@ function SubmissionView({
               <label>
                 <span>Work email</span>
                 <input
+                  type="email"
                   value={form.submitterEmail}
                   onChange={(event) => setForm((current) => ({ ...current, submitterEmail: event.target.value }))}
                   placeholder="name@company.com"
                   inputMode="email"
                   autoComplete="email"
                 />
+              </label>
+              <label>
+                <span>Designation / role</span>
+                <input
+                  value={form.designation}
+                  onChange={(event) => setForm((current) => ({ ...current, designation: event.target.value }))}
+                  placeholder="Plant Head, Operations Lead, etc."
+                  autoComplete="organization-title"
+                  maxLength={160}
+                />
+              </label>
+              <label>
+                <span>Submission date / time</span>
+                <input value="Recorded automatically on submission" readOnly />
               </label>
             </div>
           </fieldset>
@@ -793,13 +1013,18 @@ function SubmissionView({
           </fieldset>
 
           <fieldset className="form-section">
-            <legend><span>04</span><div>Value Streams<small>Select all manufacturing aspects this response will help.</small></div></legend>
+            <legend><span>04</span><div>Value Stream<small>Select the one manufacturing aspect this response will help.</small></div></legend>
             <div className="stream-options">
               {VALUE_STREAMS.map((stream, index) => {
                 const selected = form.valueStreams.includes(stream);
                 return (
                   <label className={selected ? "selected" : ""} key={stream}>
-                    <input type="checkbox" checked={selected} onChange={() => toggleValueStream(stream)} />
+                    <input
+                      type="radio"
+                      name="valueStream"
+                      checked={selected}
+                      onChange={() => selectValueStream(stream)}
+                    />
                     <span>0{index + 1}</span>
                     <strong>{stream}</strong>
                     <i>✓</i>
@@ -824,8 +1049,8 @@ function SubmissionView({
           </fieldset>
 
           <div className="form-actions">
-            <div><span>Secure draft</span><small>Last changes are kept on this response</small></div>
-            <button className="secondary-action" type="button" onClick={() => void save("draft")} disabled={isSaving}>Save draft</button>
+            <div><span>Local draft</span><small>Saved only on this device until submitted</small></div>
+            <button className="secondary-action" type="button" onClick={saveLocalDraft} disabled={isSaving}>Save draft</button>
             <button className="primary-action" type="submit" disabled={isSaving}>{isSaving ? "Saving…" : "Submit for verification"} <span>↗</span></button>
           </div>
         </form>
@@ -845,24 +1070,19 @@ function ReviewView({
   notice: string;
   onChanged: (message: string) => Promise<void>;
 }) {
-  const [filter, setFilter] = useState<"all" | Status | "live">("submitted");
+  const [filter, setFilter] = useState<"all" | Status>("submitted");
   const [selectedId, setSelectedId] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<AdminEditState | null>(null);
 
   const filtered = submissions.filter((item) => {
     if (filter === "all") return true;
-    if (filter === "live") return item.status === "approved" && item.isVisible;
     return item.status === filter;
   });
   const selected = submissions.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
 
-  useEffect(() => {
-    if (filtered.length && !filtered.some((item) => item.id === selectedId)) {
-      setSelectedId(filtered[0].id);
-    }
-  }, [filtered, selectedId]);
-
-  const update = async (changes: Partial<Pick<Submission, "status" | "isVisible">>, message: string) => {
+  const update = async (changes: SubmissionPatch, message: string) => {
     if (!selected) return;
     setIsUpdating(true);
     try {
@@ -872,6 +1092,7 @@ function ReviewView({
         body: JSON.stringify(changes),
       });
       if (!response.ok) throw new Error("Update failed");
+      setIsEditing(false);
       await onChanged(message);
     } catch {
       await onChanged("The response could not be updated. Please try again.");
@@ -880,10 +1101,33 @@ function ReviewView({
     }
   };
 
+  const saveEdits = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected || !editForm) return;
+    const valueStreamIndex = VALUE_STREAMS.indexOf(editForm.valueStream);
+    await update(
+      {
+        plant: editForm.plant,
+        submitterName: editForm.submitterName,
+        submitterEmail: editForm.submitterEmail,
+        designation: editForm.designation,
+        useCases: USE_CASES.map((useCase) =>
+          useCase === editForm.selectedUseCase
+            ? editForm.useCaseDescription.trim()
+            : "",
+        ),
+        valueStreams:
+          valueStreamIndex >= 0 ? [String(valueStreamIndex + 1)] : [],
+        expectedBenefits: editForm.expectedBenefits,
+      },
+      "Response details updated.",
+    );
+  };
+
   const counts = {
     submitted: submissions.filter((item) => item.status === "submitted").length,
     approved: submissions.filter((item) => item.status === "approved").length,
-    live: submissions.filter((item) => item.status === "approved" && item.isVisible).length,
+    rejected: submissions.filter((item) => item.status === "rejected").length,
   };
 
   return (
@@ -896,7 +1140,7 @@ function ReviewView({
         <div className="review-metrics">
           <div><strong>{counts.submitted}</strong><span>Awaiting review</span></div>
           <div><strong>{counts.approved}</strong><span>Approved</span></div>
-          <div><strong>{counts.live}</strong><span>In presentation</span></div>
+          <div><strong>{counts.rejected}</strong><span>Needs changes</span></div>
         </div>
       </div>
       {notice && <div className="review-notice" role="status">{notice}</div>}
@@ -906,10 +1150,13 @@ function ReviewView({
           ["submitted", "Submitted"],
           ["rejected", "Needs changes"],
           ["approved", "Approved"],
-          ["live", "In presentation"],
           ["all", "All responses"],
         ].map(([id, label]) => (
-          <button type="button" aria-pressed={filter === id} className={filter === id ? "active" : ""} key={id} onClick={() => setFilter(id as typeof filter)}>
+          <button type="button" aria-pressed={filter === id} className={filter === id ? "active" : ""} key={id} onClick={() => {
+            setFilter(id as typeof filter);
+            setIsEditing(false);
+            setEditForm(null);
+          }}>
             {label}
           </button>
         ))}
@@ -925,12 +1172,16 @@ function ReviewView({
           ) : filtered.map((item) => {
             const plant = getPlant(item.plant);
             return (
-              <button className={`queue-item ${selected?.id === item.id ? "active" : ""}`} key={item.id} type="button" onClick={() => setSelectedId(item.id)}>
+              <button className={`queue-item ${selected?.id === item.id ? "active" : ""}`} key={item.id} type="button" onClick={() => {
+                setSelectedId(item.id);
+                setIsEditing(false);
+                setEditForm(null);
+              }}>
                 <span className="queue-accent" style={{ background: plant.accent }} />
                 <span className="queue-content">
                   <span><strong>{plant.name}</strong><small>{formatDate(item.updatedAt)}</small></span>
                   <b>{item.submitterName || "Unnamed leader"}</b>
-                  <span className="queue-meta"><i className={`status-${item.status}`} />{statusLabel(item.status)} · {item.useCases.length} use cases</span>
+                  <span className="queue-meta"><i className={`status-${item.status}`} />{statusLabel(item.status)} · {chosenUseCase(item)?.id ?? "No use case"}</span>
                 </span>
                 <span className="queue-arrow">→</span>
               </button>
@@ -945,13 +1196,124 @@ function ReviewView({
                 <div>
                   <p className="eyebrow">{selected.referenceId ?? `Response ${selected.id.slice(0, 8).toUpperCase()}`}</p>
                   <h2>{getPlant(selected.plant).name}</h2>
-                  <span>{getPlant(selected.plant).location} · Submitted by {selected.submitterName}</span>
+                  <span>
+                    {getPlant(selected.plant).location} · Submitted by {selected.submitterName}
+                    {selected.designation ? `, ${selected.designation}` : ""}
+                    <br />
+                    {formatDateTime(selected.submittedAt)}
+                  </span>
                 </div>
                 <span className={`detail-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
+                <button
+                  className="secondary-action"
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    setEditForm(adminEditState(selected));
+                    setIsEditing((current) => !current);
+                  }}
+                >
+                  {isEditing ? "Close editor" : "Edit response"}
+                </button>
               </div>
 
+              {isEditing && editForm && (
+                <form className="response-form" onSubmit={saveEdits}>
+                  <fieldset className="form-section">
+                    <legend><span>01</span><div>Owner and plant<small>Edit the submitted response directly.</small></div></legend>
+                    <div className="two-fields">
+                      <label>
+                        <span>Leader name</span>
+                        <input
+                          value={editForm.submitterName}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, submitterName: event.target.value }) : current)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        <span>Work email</span>
+                        <input
+                          type="email"
+                          value={editForm.submitterEmail}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, submitterEmail: event.target.value }) : current)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        <span>Designation / role</span>
+                        <input
+                          value={editForm.designation}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, designation: event.target.value }) : current)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        <span>Plant</span>
+                        <select
+                          value={editForm.plant}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, plant: event.target.value }) : current)}
+                        >
+                          {PLANTS.map((plant) => <option key={plant.id} value={plant.id}>{plant.name}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="form-section">
+                    <legend><span>02</span><div>Use case and value stream<small>Exactly one of each is required.</small></div></legend>
+                    <div className="two-fields">
+                      <label>
+                        <span>Use case</span>
+                        <select
+                          value={editForm.selectedUseCase}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, selectedUseCase: event.target.value }) : current)}
+                        >
+                          {USE_CASES.map((useCase) => <option key={useCase} value={useCase}>{useCase}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Value stream</span>
+                        <select
+                          value={editForm.valueStream}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, valueStream: event.target.value }) : current)}
+                        >
+                          {VALUE_STREAMS.map((stream) => <option key={stream} value={stream}>{stream}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="description-field">
+                      <span>Use-case description</span>
+                      <textarea
+                        value={editForm.useCaseDescription}
+                        onChange={(event) => setEditForm((current) => current ? ({ ...current, useCaseDescription: event.target.value }) : current)}
+                        rows={4}
+                        required
+                      />
+                    </label>
+                  </fieldset>
+
+                  <fieldset className="form-section">
+                    <legend><span>03</span><div>Expected benefits<small>Update the full presentation copy.</small></div></legend>
+                    <label className="benefit-field">
+                      <textarea
+                        value={editForm.expectedBenefits}
+                        onChange={(event) => setEditForm((current) => current ? ({ ...current, expectedBenefits: event.target.value }) : current)}
+                        rows={8}
+                        required
+                      />
+                    </label>
+                  </fieldset>
+
+                  <div className="form-actions">
+                    <div><span>Submitted</span><small>{formatDateTime(selected.submittedAt)}</small></div>
+                    <button className="secondary-action" type="button" onClick={() => setIsEditing(false)} disabled={isUpdating}>Cancel</button>
+                    <button className="primary-action" type="submit" disabled={isUpdating}>{isUpdating ? "Saving..." : "Save edits"}</button>
+                  </div>
+                </form>
+              )}
+
               <div className="detail-section">
-                <div className="detail-label"><span>01</span><strong>Use Cases</strong></div>
+                <div className="detail-label"><span>01</span><strong>Use Case</strong></div>
                 <div className="detail-use-cases">
                   {selected.useCases.map((item, index) => (
                     <article key={`${item.id}-${index}`}><span>0{index + 1}</span><div><strong>{item.id}</strong><p>{item.description}</p></div></article>
@@ -961,7 +1323,7 @@ function ReviewView({
 
               <div className="detail-section detail-columns">
                 <div>
-                  <div className="detail-label"><span>02</span><strong>Value Streams</strong></div>
+                  <div className="detail-label"><span>02</span><strong>Value Stream</strong></div>
                   <div className="detail-streams">{selected.valueStreams.map((stream) => <span key={stream}>{stream}</span>)}</div>
                 </div>
                 <div>
@@ -973,19 +1335,30 @@ function ReviewView({
               <div className="verification-bar">
                 <div>
                   <span>Verification controls</span>
-                  <small>Approval and presentation visibility are recorded separately.</small>
+                  <small>Approved responses appear in the presentation automatically.</small>
                 </div>
-                {selected.status !== "approved" ? (
-                  <>
-                    <button className="request-action" type="button" disabled={isUpdating} onClick={() => void update({ status: "rejected", isVisible: false }, "Changes requested from the response owner.")}>Request changes</button>
-                    <button className="approve-action" type="button" disabled={isUpdating} onClick={() => void update({ status: "approved", isVisible: true }, "Response approved and included in the presentation.")}>Approve & include <span>✓</span></button>
-                  </>
-                ) : (
-                  <>
-                    <button className="request-action" type="button" disabled={isUpdating} onClick={() => void update({ status: "rejected", isVisible: false }, "Response returned for changes.")}>Return for changes</button>
-                    <button className={selected.isVisible ? "visibility-action live" : "visibility-action"} type="button" disabled={isUpdating} onClick={() => void update({ isVisible: !selected.isVisible }, selected.isVisible ? "Response removed from the presentation." : "Response included in the presentation.")}>{selected.isVisible ? "Included in presentation" : "Include in presentation"}<span>{selected.isVisible ? "On" : "Off"}</span></button>
-                  </>
-                )}
+                <button
+                  className="request-action"
+                  type="button"
+                  disabled={isUpdating || selected.status === "rejected"}
+                  onClick={() => void update(
+                    { status: "rejected", isVisible: false },
+                    "Response rejected and removed from the presentation.",
+                  )}
+                >
+                  Reject response
+                </button>
+                <button
+                  className="approve-action"
+                  type="button"
+                  disabled={isUpdating || selected.status === "approved"}
+                  onClick={() => void update(
+                    { status: "approved", isVisible: true },
+                    "Response approved and included in the presentation.",
+                  )}
+                >
+                  Approve response
+                </button>
               </div>
             </>
           ) : (
