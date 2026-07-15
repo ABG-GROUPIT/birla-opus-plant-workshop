@@ -2428,6 +2428,12 @@ a:focus-visible,
     margin-bottom: 20px;
   }
 
+  .plant-hero-copy h1.long-plant-name {
+    font-size: clamp(36px, 10.7vw, 48px);
+    letter-spacing: -0.06em;
+    max-width: 100%;
+  }
+
   .response-meta {
     flex-direction: column;
     gap: 6px;
@@ -2564,13 +2570,20 @@ a:focus-visible,
     grid-template-columns: 1fr;
   }
 
+  .form-context,
+  .response-form {
+    min-width: 0;
+    width: 100%;
+  }
+
   .form-context {
     position: static;
   }
 
   .selected-plant-image {
     aspect-ratio: 1.6 / 1;
-    min-height: 250px;
+    min-height: 0;
+    width: 100%;
   }
 
   .two-fields,
@@ -2635,7 +2648,18 @@ a:focus-visible,
   }
 
   .detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
     gap: 18px;
+  }
+
+  .detail-heading > div {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .detail-heading h2 {
+    overflow-wrap: anywhere;
   }
 
   .verification-bar {
@@ -2663,6 +2687,12 @@ a:focus-visible,
   .credits-list b {
     grid-column: 3;
     grid-row: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .plant-options {
+    grid-template-columns: 1fr;
   }
 }
 

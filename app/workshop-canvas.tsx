@@ -579,7 +579,7 @@ function PresentationView({
         </div>
         <div className="plant-hero-copy">
           <p className="eyebrow light">Plant {plant.number} · {plant.location}</p>
-          <h1>{plant.name}</h1>
+          <h1 className={plant.name.length > 10 ? "long-plant-name" : undefined}>{plant.name}</h1>
           <div className="response-meta">
             <span>
               {plantResponses.length
