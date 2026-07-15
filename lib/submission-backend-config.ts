@@ -1,4 +1,4 @@
-export type SubmissionStorageMode = "auto" | "d1" | "supabase";
+export type SubmissionStorageMode = "supabase";
 
 export interface SupabaseSubmissionConfig {
   url: string;
@@ -12,8 +12,8 @@ export interface GoogleSheetsMirrorConfig {
 
 export interface SubmissionBackendConfig {
   requestedStorage: SubmissionStorageMode;
-  selectedStorage: "d1" | "supabase";
-  supabase: SupabaseSubmissionConfig | null;
+  selectedStorage: "supabase";
+  supabase: SupabaseSubmissionConfig;
   googleSheetsMirror: GoogleSheetsMirrorConfig | null;
 }
 
@@ -56,18 +56,16 @@ function validatedUrl(value: string, field: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-/** Pure parser so configuration behavior can be tested without a Worker. */
+/** Pure parser so configuration behavior can be tested without a runtime. */
 export function parseSubmissionBackendConfig(
   values: Readonly<Record<string, unknown>>,
 ): SubmissionBackendConfig {
   const requestedStorage = (
-    optionalString(values, "SUBMISSIONS_STORAGE") ?? "auto"
+    optionalString(values, "SUBMISSIONS_STORAGE") ?? "supabase"
   ).toLowerCase();
-  if (!(["auto", "d1", "supabase"] as const).includes(
-    requestedStorage as SubmissionStorageMode,
-  )) {
+  if (requestedStorage !== "supabase") {
     throw new SubmissionBackendConfigurationError(
-      "SUBMISSIONS_STORAGE must be auto, d1, or supabase",
+      "SUBMISSIONS_STORAGE must be supabase",
     );
   }
 
@@ -81,21 +79,15 @@ export function parseSubmissionBackendConfig(
   }
   const supabaseSecret = currentSecret ?? legacySecret;
 
-  const mode = requestedStorage as SubmissionStorageMode;
-  const wantsSupabase =
-    mode === "supabase" || (mode === "auto" && Boolean(supabaseUrl || supabaseSecret));
-  let supabase: SupabaseSubmissionConfig | null = null;
-  if (wantsSupabase) {
-    if (!supabaseUrl || !supabaseSecret) {
-      throw new SubmissionBackendConfigurationError(
-        "Supabase storage requires both SUPABASE_URL and SUPABASE_SECRET_KEY",
-      );
-    }
-    supabase = {
-      url: validatedUrl(supabaseUrl, "SUPABASE_URL"),
-      secretKey: supabaseSecret,
-    };
+  if (!supabaseUrl || !supabaseSecret) {
+    throw new SubmissionBackendConfigurationError(
+      "Supabase storage requires both SUPABASE_URL and SUPABASE_SECRET_KEY",
+    );
   }
+  const supabase: SupabaseSubmissionConfig = {
+    url: validatedUrl(supabaseUrl, "SUPABASE_URL"),
+    secretKey: supabaseSecret,
+  };
 
   const webhookUrl = optionalString(values, "GOOGLE_SHEETS_WEBHOOK_URL");
   const webhookSecret = optionalString(values, "GOOGLE_SHEETS_WEBHOOK_SECRET");
@@ -106,8 +98,8 @@ export function parseSubmissionBackendConfig(
   }
 
   return {
-    requestedStorage: mode,
-    selectedStorage: supabase ? "supabase" : "d1",
+    requestedStorage: "supabase",
+    selectedStorage: "supabase",
     supabase,
     googleSheetsMirror:
       webhookUrl && webhookSecret
@@ -121,4 +113,3 @@ export function parseSubmissionBackendConfig(
         : null,
   };
 }
-

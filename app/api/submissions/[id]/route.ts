@@ -5,6 +5,9 @@ import {
   updateSubmission,
 } from "@/lib/submissions";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 type RouteContext = { params: Promise<{ id: string }> | { id: string } };

@@ -35,8 +35,7 @@ test("contains the compact Birla Opus presentation experience", async () => {
 });
 
 test("separates presentation, leader submission, and admin review routes", async () => {
-  const [hosting, page, submitPage, adminPage, layout, packageJson] = await Promise.all([
-    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
+  const [page, submitPage, adminPage, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/submit/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/admin/page.tsx", import.meta.url), "utf8"),
@@ -44,7 +43,6 @@ test("separates presentation, leader submission, and admin review routes", async
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(hosting, /"d1"\s*:\s*"DB"/);
   assert.match(page, /WorkshopPresentation/);
   assert.doesNotMatch(page, /LeaderSubmission|AdminReview|\/submit|\/admin/);
   assert.match(submitPage, /LeaderSubmission/);
@@ -53,6 +51,11 @@ test("separates presentation, leader submission, and admin review routes", async
   assert.doesNotMatch(adminPage, /LeaderSubmission|WorkshopPresentation/);
   assert.match(layout, /Birla Opus Plant Workshop Canvas/);
   assert.match(layout, /og\.png/);
+  const packageConfig = JSON.parse(packageJson);
+  assert.equal(packageConfig.scripts.dev, "next dev");
+  assert.equal(packageConfig.scripts.build, "next build");
+  assert.equal(packageConfig.scripts.start, "next start");
+  assert.doesNotMatch(packageJson, /vinext|wrangler|cloudflare/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(page + layout, /codex-preview|_sites-preview/);
 });

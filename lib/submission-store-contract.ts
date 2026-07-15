@@ -1,10 +1,10 @@
-import type { PlantName, SubmissionStatus } from "../db/schema.ts";
+import type { PlantName, SubmissionStatus } from "./submission-domain.ts";
 
 export const STORED_VALUE_STREAMS = ["1", "2", "3", "4"] as const;
 
 export type StoredValueStream = (typeof STORED_VALUE_STREAMS)[number];
 
-/** Provider-neutral record used by both the D1 fallback and Supabase. */
+/** Provider-neutral record used by the server-side Supabase adapter. */
 export interface StoredSubmission {
   id: string;
   plant: PlantName;
@@ -42,4 +42,3 @@ export interface SubmissionStore {
     expectedUpdatedAt: string,
   ): Promise<StoredSubmission | null>;
 }
-

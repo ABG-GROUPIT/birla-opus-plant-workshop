@@ -1,49 +1,37 @@
 # Submission backend setup
 
-The website can run in two storage modes behind the same submission API:
-
-- **D1 fallback:** used automatically when no Supabase credentials are present.
-  This keeps local development and the current demo deployment working.
-- **Supabase/Postgres:** recommended for the production workshop. The server
-  talks to Supabase's Data REST API; the Supabase secret never enters browser
-  code.
+The Next.js server API stores every draft, submission, edit, approval, and
+visibility change in Supabase/Postgres. There is no local or ephemeral
+production fallback: missing Supabase configuration causes the API to fail
+instead of silently losing data.
 
 The browser-facing contract stays unchanged. Leaders submit through the custom
-form, the admin page edits and approves the same records, and the presentation
-query always adds `status = approved` and `is_visible = true` at the database
-request boundary.
+form, admins edit and approve the same records, and presentation queries always
+apply both `status = approved` and `is_visible = true`.
 
-## 1. Create the production database
+## 1. Create the database
 
-1. Create a Supabase project in the required organisation and region.
+1. Create or select the Supabase project that will own workshop data.
 2. Run
    [`supabase/migrations/202607160001_workshop_submissions.sql`](../supabase/migrations/202607160001_workshop_submissions.sql)
-   in the Supabase SQL editor or through the Supabase migration workflow.
-3. Confirm that both `workshop_submissions` and
-   `workshop_submission_audit` exist.
+   in the Supabase SQL editor or migration workflow.
+3. Confirm that `workshop_submissions` and `workshop_submission_audit` exist.
 
 The migration:
 
-- enforces the six plants and four workflow statuses;
-- allows incomplete drafts but requires exactly one described use case and one
-  value stream for submitted/approved responses;
-- prevents any non-approved response from becoming presentation-visible;
-- enables row-level security and removes direct `anon`/`authenticated` table
+- restricts plants and workflow statuses to the supported fixed values;
+- permits incomplete drafts but validates submitted and approved responses;
+- prevents non-approved records from becoming presentation-visible;
+- enables row-level security and removes direct `anon` and `authenticated`
   access;
-- grants server-side access to `service_role`; and
-- records lightweight audit metadata (changed field names and status/visibility
-  transitions) without copying leaders' freehand text into the audit table.
+- grants the server-side `service_role` access; and
+- records changed field names and workflow transitions without duplicating
+  leader wording in the audit table.
 
-Supabase recommends enabling RLS on exposed tables and keeping secret/service
-keys server-side. See the official [Data REST API](https://supabase.com/docs/guides/api),
-[API key](https://supabase.com/docs/guides/getting-started/api-keys), and
-[RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
-documentation.
+## 2. Configure server variables
 
-## 2. Configure runtime values
-
-Copy `.env.example` to `.env` for local testing, or add the same values as
-encrypted runtime secrets in the hosting control plane:
+For local development, copy `.env.example` to `.env.local`. In Vercel, add the
+same values to Production, Preview, and Development as appropriate:
 
 ```dotenv
 SUBMISSIONS_STORAGE=supabase
@@ -51,111 +39,48 @@ SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_SECRET_KEY=sb_secret_YOUR_SERVER_SECRET
 ```
 
-Use a current Supabase `sb_secret_...` key. The adapter also accepts the legacy
-JWT `service_role` key through `SUPABASE_SERVICE_ROLE_KEY`, but the current
-server secret is preferred. Never prefix either variable with `NEXT_PUBLIC_`
-and never commit the populated `.env` file.
+Use the project URL and a current `sb_secret_...` server key from Supabase. The
+adapter also accepts the legacy JWT service-role key through
+`SUPABASE_SERVICE_ROLE_KEY`, but new deployments should prefer
+`SUPABASE_SECRET_KEY`.
 
-Recommended production setting is `SUBMISSIONS_STORAGE=supabase`. It fails fast
-if either credential is missing. The default `auto` mode selects Supabase only
-when both values exist and otherwise uses D1. `SUBMISSIONS_STORAGE=d1` forces
-the fallback explicitly.
+These values must remain server-only. Do not prefix them with `NEXT_PUBLIC_`,
+commit them, or paste them into browser code.
 
-Existing D1 rows are not copied automatically. Export/import them before the
-workshop if existing demo responses must be retained.
+## 3. Deploy on Vercel
 
-## 3. Optional Google Sheet mirror
+1. Import `ABG-GROUPIT/birla-opus-plant-workshop` into Vercel.
+2. Select the **Next.js** framework preset and root directory `./`.
+3. Keep the default build command (`next build`) and output (`.next`).
+4. Add the required environment variables before deploying.
+5. Keep deployment protection disabled if the workshop URLs must be public.
+6. Deploy the production branch.
 
-The Sheet is a best-effort derivative event log, never the source of truth.
-Submission and admin update responses return as soon as Supabase/D1 succeeds;
-Cloudflare `waitUntil` delivers the mirror in the background. A slow or broken
-Sheet endpoint is logged but cannot roll back the database write.
+After deployment, verify this workflow against the production URL:
 
-Create a Google Apps Script bound to the target spreadsheet (or replace
-`SPREADSHEET_ID` below), add a Script Property named `WEBHOOK_SECRET`, and use:
+1. `GET /api/submissions` returns a JSON collection.
+2. Save a draft through `/submit`, then refresh `/admin` and confirm it remains.
+3. Submit a complete response, edit it in `/admin`, and approve it.
+4. Confirm it appears in `GET /api/submissions?presentation=true` and on `/`.
+5. Redeploy and confirm the same response still exists.
 
-```javascript
-const SPREADSHEET_ID = "PASTE_SPREADSHEET_ID";
-const SHEET_NAME = "Workshop Mirror";
+## Optional Google Sheet mirror
 
-function json(value) {
-  return ContentService.createTextOutput(JSON.stringify(value))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  try {
-    const payload = JSON.parse(e.postData.contents);
-    const expected = PropertiesService.getScriptProperties()
-      .getProperty("WEBHOOK_SECRET");
-    if (!expected || payload.secret !== expected) {
-      return json({ ok: false, error: "unauthorised" });
-    }
-
-    const submission = payload.submission;
-    const selectedUseCase = submission.useCases.findIndex(Boolean);
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID)
-      .getSheetByName(SHEET_NAME)
-      || SpreadsheetApp.openById(SPREADSHEET_ID).insertSheet(SHEET_NAME);
-
-    sheet.appendRow([
-      payload.event,
-      payload.occurredAt,
-      submission.id,
-      submission.plant,
-      submission.submitterName,
-      submission.submitterEmail,
-      submission.designation,
-      selectedUseCase >= 0 ? selectedUseCase + 1 : "",
-      selectedUseCase >= 0 ? submission.useCases[selectedUseCase] : "",
-      submission.valueStreams[0] || "",
-      submission.expectedBenefits,
-      submission.status,
-      submission.isVisible,
-      submission.updatedAt,
-    ]);
-
-    return json({ ok: true });
-  } catch (error) {
-    return json({ ok: false, error: String(error) });
-  }
-}
-```
-
-Deploy it as a web app using the production `/exec` URL, then set both:
+Supabase is authoritative. A Google Apps Script webhook can receive a
+best-effort event copy after each successful create or update. Configure both
+variables or neither:
 
 ```dotenv
 GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT/exec
 GOOGLE_SHEETS_WEBHOOK_SECRET=YOUR_LONG_RANDOM_SHARED_SECRET
 ```
 
-Apps Script web apps receive JSON POST data through `doPost(e)`. See Google's
-official [web-app guide](https://developers.google.com/apps-script/guides/web).
+Next.js schedules the mirror after the API response so a slow or unavailable
+Sheet cannot roll back the Supabase write.
 
-## Access decision and operational warning
+## Access warning
 
-Per the current workshop decision, submission creation and the admin APIs are
-unauthenticated. Anyone who can reach the admin URL can read, edit, approve, or
-hide responses. Before exposing this deployment to the public internet, protect
-the whole admin route/API at the hosting layer (for example, a restricted access
-policy) or add application authentication. The database itself remains private;
-the Supabase server secret is used only inside the Worker.
-
-## Adapter integration
-
-The provider-neutral contract is in `lib/submission-store-contract.ts`.
-`getConfiguredSupabaseSubmissionStore()` returns a Supabase store when selected
-and `null` when the existing D1 path should run. After either store successfully
-creates or updates a record, call `queueConfiguredSubmissionMirror()`:
-
-```ts
-const externalStore = getConfiguredSupabaseSubmissionStore();
-
-// Use externalStore.create/get/list/update when non-null; otherwise use D1.
-// Only after the authoritative write succeeds:
-queueConfiguredSubmissionMirror("submission.created", savedSubmission);
-```
-
-`update()` accepts the previous `updatedAt` value and returns `null` when no row
-matched, preserving the existing optimistic-concurrency conflict behavior.
-
+The current workshop requirement leaves submission creation and admin APIs
+unauthenticated. A public deployment therefore lets anyone who discovers the
+admin URL read, edit, approve, reject, or hide responses. The Supabase secret
+still remains server-side, but URL secrecy is not an authorization control.

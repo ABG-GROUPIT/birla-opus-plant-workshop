@@ -1,10 +1,9 @@
-import { getDatabase } from "@/db";
 import {
   PLANT_NAMES,
   SUBMISSION_STATUSES,
   type PlantName,
   type SubmissionStatus,
-} from "@/db/schema";
+} from "@/lib/submission-domain";
 import {
   getSubmissionCompletionErrors,
   requiresCompleteResponse,
@@ -33,29 +32,6 @@ export interface Submission {
   updatedAt: string;
   submittedAt: string | null;
   reviewedAt: string | null;
-}
-
-interface SubmissionRow {
-  id: string;
-  plant: PlantName;
-  submitter_name: string;
-  submitter_email: string;
-  designation: string;
-  use_case_1: string;
-  use_case_2: string;
-  use_case_3: string;
-  use_case_4: string;
-  value_stream_1_selected: number;
-  value_stream_2_selected: number;
-  value_stream_3_selected: number;
-  value_stream_4_selected: number;
-  expected_benefits: string;
-  status: SubmissionStatus;
-  is_visible: number;
-  created_at: string;
-  updated_at: string;
-  submitted_at: string | null;
-  reviewed_at: string | null;
 }
 
 interface CreateSubmissionInput {
@@ -91,29 +67,6 @@ export interface SubmissionFilters {
 const PLANT_SET = new Set<string>(PLANT_NAMES);
 const STATUS_SET = new Set<string>(SUBMISSION_STATUSES);
 const VALUE_STREAM_SET = new Set<string>(VALUE_STREAMS);
-const SELECT_SUBMISSION_COLUMNS = `
-SELECT
-  id,
-  plant,
-  submitter_name,
-  submitter_email,
-  designation,
-  use_case_1,
-  use_case_2,
-  use_case_3,
-  use_case_4,
-  value_stream_1_selected,
-  value_stream_2_selected,
-  value_stream_3_selected,
-  value_stream_4_selected,
-  expected_benefits,
-  status,
-  is_visible,
-  created_at,
-  updated_at,
-  submitted_at,
-  reviewed_at
-FROM workshop_submissions`;
 
 export class SubmissionError extends Error {
   constructor(
@@ -257,43 +210,6 @@ function assertComplete(submission: {
   }
 }
 
-function mapRow(row: SubmissionRow): Submission {
-  const valueStreams = VALUE_STREAMS.filter(
-    (_, index) =>
-      [
-        row.value_stream_1_selected,
-        row.value_stream_2_selected,
-        row.value_stream_3_selected,
-        row.value_stream_4_selected,
-      ][index] === 1,
-  );
-
-  return {
-    id: row.id,
-    plant: row.plant,
-    submitterName: row.submitter_name,
-    submitterEmail: row.submitter_email,
-    designation: row.designation,
-    useCases: [row.use_case_1, row.use_case_2, row.use_case_3, row.use_case_4],
-    valueStreams,
-    expectedBenefits: row.expected_benefits,
-    status: row.status,
-    isVisible: row.is_visible === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    submittedAt: row.submitted_at,
-    reviewedAt: row.reviewed_at,
-  };
-}
-
-async function findSubmissionRow(id: string): Promise<SubmissionRow | null> {
-  const database = await getDatabase();
-  return database
-    .prepare(`${SELECT_SUBMISSION_COLUMNS} WHERE id = ?1`)
-    .bind(id)
-    .first<SubmissionRow>();
-}
-
 export function parseCreateSubmission(value: unknown): CreateSubmissionInput {
   if (!isObject(value)) {
     throw new SubmissionError("Request body must be a JSON object", 400);
@@ -421,128 +337,24 @@ export async function createSubmission(
     reviewedAt: null,
   };
 
-  const externalStore = getConfiguredSupabaseSubmissionStore();
-  if (externalStore) {
-    const created = await externalStore.create(pending);
-    queueConfiguredSubmissionMirror("submission.created", created);
-    return created;
-  }
-
-  const database = await getDatabase();
-  const selected = new Set<ValueStream>(input.valueStreams);
-
-  await database
-    .prepare(`
-INSERT INTO workshop_submissions (
-  id,
-  plant,
-  submitter_name,
-  submitter_email,
-  designation,
-  use_case_1,
-  use_case_2,
-  use_case_3,
-  use_case_4,
-  value_stream_1_selected,
-  value_stream_2_selected,
-  value_stream_3_selected,
-  value_stream_4_selected,
-  expected_benefits,
-  status,
-  is_visible,
-  created_at,
-  updated_at,
-  submitted_at,
-  reviewed_at
-) VALUES (
-  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0, ?16, ?16, ?17, NULL
-)`)
-    .bind(
-      id,
-      input.plant,
-      input.submitterName,
-      input.submitterEmail,
-      input.designation,
-      input.useCases[0],
-      input.useCases[1],
-      input.useCases[2],
-      input.useCases[3],
-      selected.has("1") ? 1 : 0,
-      selected.has("2") ? 1 : 0,
-      selected.has("3") ? 1 : 0,
-      selected.has("4") ? 1 : 0,
-      input.expectedBenefits,
-      status,
-      now,
-      status === "submitted" ? now : null,
-    )
-    .run();
-
-  const created = await findSubmissionRow(id);
-  if (!created) {
-    throw new Error("The response was saved but could not be read back");
-  }
-
-  const submission = mapRow(created);
-  queueConfiguredSubmissionMirror("submission.created", submission);
-  return submission;
+  const store = getConfiguredSupabaseSubmissionStore();
+  const created = await store.create(pending);
+  queueConfiguredSubmissionMirror("submission.created", created);
+  return created;
 }
 
 export async function getSubmission(id: string): Promise<Submission> {
-  const externalStore = getConfiguredSupabaseSubmissionStore();
-  if (externalStore) {
-    const submission = await externalStore.get(id);
-    if (!submission) {
-      throw new SubmissionError("Response not found", 404);
-    }
-    return submission;
-  }
-
-  const row = await findSubmissionRow(id);
-  if (!row) {
+  const submission = await getConfiguredSupabaseSubmissionStore().get(id);
+  if (!submission) {
     throw new SubmissionError("Response not found", 404);
   }
-  return mapRow(row);
+  return submission;
 }
 
 export async function listSubmissions(
   filters: SubmissionFilters,
 ): Promise<Submission[]> {
-  const externalStore = getConfiguredSupabaseSubmissionStore();
-  if (externalStore) {
-    return externalStore.list(filters);
-  }
-
-  const database = await getDatabase();
-  const clauses: string[] = [];
-  const bindings: Array<string | number> = [];
-
-  if (filters.presentation) {
-    clauses.push("status = 'approved'", "is_visible = 1");
-  }
-  if (filters.plant) {
-    bindings.push(filters.plant);
-    clauses.push(`plant = ?${bindings.length}`);
-  }
-  if (filters.status) {
-    bindings.push(filters.status);
-    clauses.push(`status = ?${bindings.length}`);
-  }
-  if (filters.isVisible !== undefined) {
-    bindings.push(filters.isVisible ? 1 : 0);
-    clauses.push(`is_visible = ?${bindings.length}`);
-  }
-
-  const where = clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "";
-  const statement = database.prepare(
-    `${SELECT_SUBMISSION_COLUMNS}${where} ORDER BY created_at DESC, id DESC`,
-  );
-  const result = await (bindings.length > 0
-    ? statement.bind(...bindings)
-    : statement
-  ).all<SubmissionRow>();
-
-  return (result.results ?? []).map(mapRow);
+  return getConfiguredSupabaseSubmissionStore().list(filters);
 }
 
 export async function updateSubmission(
@@ -584,76 +396,16 @@ export async function updateSubmission(
     next.reviewedAt = now;
   }
 
-  const externalStore = getConfiguredSupabaseSubmissionStore();
-  if (externalStore) {
-    const updated = await externalStore.update(next, existing.updatedAt);
-    if (!updated) {
-      throw new SubmissionError(
-        "This response changed while it was being updated. Refresh and try again.",
-        409,
-      );
-    }
-    queueConfiguredSubmissionMirror("submission.updated", updated);
-    return updated;
-  }
-
-  const selected = new Set<ValueStream>(next.valueStreams);
-  const database = await getDatabase();
-  const result = await database
-    .prepare(`
-UPDATE workshop_submissions
-SET
-  plant = ?1,
-  submitter_name = ?2,
-  submitter_email = ?3,
-  designation = ?4,
-  use_case_1 = ?5,
-  use_case_2 = ?6,
-  use_case_3 = ?7,
-  use_case_4 = ?8,
-  value_stream_1_selected = ?9,
-  value_stream_2_selected = ?10,
-  value_stream_3_selected = ?11,
-  value_stream_4_selected = ?12,
-  expected_benefits = ?13,
-  status = ?14,
-  is_visible = ?15,
-  updated_at = ?16,
-  submitted_at = ?17,
-  reviewed_at = ?18
-WHERE id = ?19 AND updated_at = ?20`)
-    .bind(
-      next.plant,
-      next.submitterName,
-      next.submitterEmail,
-      next.designation,
-      next.useCases[0],
-      next.useCases[1],
-      next.useCases[2],
-      next.useCases[3],
-      selected.has("1") ? 1 : 0,
-      selected.has("2") ? 1 : 0,
-      selected.has("3") ? 1 : 0,
-      selected.has("4") ? 1 : 0,
-      next.expectedBenefits,
-      next.status,
-      next.isVisible ? 1 : 0,
-      now,
-      next.submittedAt,
-      next.reviewedAt,
-      id,
-      existing.updatedAt,
-    )
-    .run();
-
-  if ((result.meta.changes ?? 0) === 0) {
+  const updated = await getConfiguredSupabaseSubmissionStore().update(
+    next,
+    existing.updatedAt,
+  );
+  if (!updated) {
     throw new SubmissionError(
       "This response changed while it was being updated. Refresh and try again.",
       409,
     );
   }
-
-  const updated = await getSubmission(id);
   queueConfiguredSubmissionMirror("submission.updated", updated);
   return updated;
 }

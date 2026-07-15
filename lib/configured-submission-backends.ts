@@ -1,4 +1,4 @@
-import { env, waitUntil } from "cloudflare:workers";
+import { after } from "next/server";
 import { createGoogleSheetsSubmissionMirror } from "./google-sheets-submission-mirror";
 import {
   parseSubmissionBackendConfig,
@@ -11,26 +11,23 @@ import type {
 import { createSupabaseSubmissionStore } from "./supabase-submission-store";
 
 let cachedConfig: SubmissionBackendConfig | undefined;
-let cachedSupabaseStore: SubmissionStore | null | undefined;
+let cachedSupabaseStore: SubmissionStore | undefined;
 
 export function getConfiguredSubmissionBackend(): SubmissionBackendConfig {
   cachedConfig ??= parseSubmissionBackendConfig(
-    env as unknown as Readonly<Record<string, unknown>>,
+    process.env as Readonly<Record<string, unknown>>,
   );
   return cachedConfig;
 }
 
-/** Returns null when the app should keep using its D1 demo/local store. */
-export function getConfiguredSupabaseSubmissionStore(): SubmissionStore | null {
-  if (cachedSupabaseStore !== undefined) return cachedSupabaseStore;
+export function getConfiguredSupabaseSubmissionStore(): SubmissionStore {
+  if (cachedSupabaseStore) return cachedSupabaseStore;
   const config = getConfiguredSubmissionBackend();
-  cachedSupabaseStore = config.supabase
-    ? createSupabaseSubmissionStore(config.supabase)
-    : null;
+  cachedSupabaseStore = createSupabaseSubmissionStore(config.supabase);
   return cachedSupabaseStore;
 }
 
-/** Queue only after the authoritative D1 or Supabase mutation has succeeded. */
+/** Queue only after the authoritative Supabase mutation has succeeded. */
 export function queueConfiguredSubmissionMirror(
   event: "submission.created" | "submission.updated",
   submission: StoredSubmission,
@@ -38,5 +35,7 @@ export function queueConfiguredSubmissionMirror(
   const config = getConfiguredSubmissionBackend().googleSheetsMirror;
   if (!config) return;
 
-  createGoogleSheetsSubmissionMirror(config, waitUntil).queue(event, submission);
+  createGoogleSheetsSubmissionMirror(config, (task) => {
+    after(() => task);
+  }).queue(event, submission);
 }

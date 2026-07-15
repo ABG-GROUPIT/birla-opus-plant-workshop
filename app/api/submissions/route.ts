@@ -8,6 +8,9 @@ import {
   submissionErrorResponse,
 } from "@/lib/submissions";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 export async function GET(request: Request) {

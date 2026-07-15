@@ -1,1 +1,0 @@
-ALTER TABLE `workshop_submissions` ADD `designation` text DEFAULT '' NOT NULL;
