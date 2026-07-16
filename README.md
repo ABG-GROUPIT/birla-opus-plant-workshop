@@ -21,14 +21,19 @@ approve, and reject responses.
 
 ## How data moves
 
-The browser calls four narrowly scoped Supabase RPC functions through the public
+The browser calls narrowly scoped Supabase RPC functions through the public
 PostgREST endpoint:
 
 - `workshop_public_list` returns only approved, visible presentation fields.
-- `workshop_submit` creates a submitted, hidden response for admin review.
+- `workshop_media_session_create` creates a one-hour, single-use upload session.
+- `workshop_submit_with_references` atomically creates a hidden response and
+  attaches its validated links/files. The original `workshop_submit` remains for
+  compatibility with older open form tabs.
 - `workshop_admin_list` returns review data after validating the admin capability.
 - `workshop_admin_update` applies edits and status changes after validating the
   capability and the row's expected update timestamp.
+- `workshop_admin_reference_update` lets an administrator rename, correct, or
+  hide one supporting reference.
 
 Direct browser access to the submission and audit tables remains revoked and
 protected by row-level security. The static site contains only a Supabase
@@ -38,7 +43,7 @@ in browser code, a `NEXT_PUBLIC_` variable, or GitHub Actions configuration.
 ## Prerequisites
 
 - Node.js `>=22.13.0`
-- A Supabase project with both included migrations applied in filename order
+- A Supabase project with all included migrations applied in filename order
 - The separately supplied raw admin capability matching the stored hash
 
 See [Submission backend setup](docs/backend-setup.md) for the database and
@@ -64,7 +69,8 @@ NEXT_PUBLIC_BASE_PATH=
 Open the local admin with
 `http://localhost:3000/admin/#<RAW_ADMIN_CAPABILITY>`. The form's **Save draft**
 action uses local storage on that device; only a final submission is written to
-Supabase.
+Supabase. Draft text and reference links are restored, but selected local files
+must be reattached after the tab is closed.
 
 ## Submission contract
 
@@ -73,6 +79,12 @@ Supabase.
 - `valueStreams` contains exactly one fixed value (`"1"` through `"4"`).
 - New form submissions enter review as `submitted` and are not visible.
 - Only approved, visible responses appear in the presentation.
+- Reference media is optional: at most four items, including at most three files
+  and two HTTPS links.
+- Allowed uploads are PDF, PPTX, DOCX, XLSX, JPEG, PNG, and WebP. Each file is
+  limited to 10 MiB and uploaded files are limited to 25 MiB per response.
+- Uploaded bytes live in the Supabase `workshop-references` Storage bucket, so
+  they do not increase the GitHub repository or Pages deployment size.
 
 ## Verification
 

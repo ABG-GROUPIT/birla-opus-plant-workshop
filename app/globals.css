@@ -1082,6 +1082,7 @@ a:focus-visible,
 }
 
 .expected-benefits-footer {
+  align-items: center;
   border-top: 1px solid rgba(21, 58, 48, 0.16);
   color: rgba(21, 58, 48, 0.54);
   display: flex;
@@ -1089,9 +1090,177 @@ a:focus-visible,
   grid-column: 1 / -1;
   justify-content: space-between;
   letter-spacing: 0.13em;
-  min-height: 38px;
-  padding-top: 13px;
+  min-height: 56px;
+  padding: 9px 0;
   text-transform: uppercase;
+}
+
+.reference-trigger {
+  align-items: center;
+  background: var(--green-deep);
+  border-radius: 999px;
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 9px;
+  font-weight: 700;
+  gap: 9px;
+  letter-spacing: 0.08em;
+  min-height: 38px;
+  padding: 0 16px;
+  text-transform: uppercase;
+  transition: background 180ms ease, transform 180ms ease;
+}
+
+.reference-trigger:hover {
+  background: var(--green);
+  transform: translateY(-1px);
+}
+
+.reference-dialog {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  max-height: min(84dvh, 780px);
+  max-width: min(760px, calc(100vw - 32px));
+  overflow: visible;
+  padding: 0;
+  width: 100%;
+}
+
+.reference-dialog::backdrop {
+  background: rgba(18, 12, 23, 0.72);
+  backdrop-filter: blur(7px);
+}
+
+.reference-dialog-shell {
+  background: #f7fcf7;
+  box-shadow: 0 32px 90px rgba(18, 12, 23, 0.34);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(84dvh, 780px);
+  overflow: hidden;
+}
+
+.reference-dialog-heading {
+  align-items: flex-start;
+  background: var(--ink);
+  color: white;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 28px 30px;
+}
+
+.reference-dialog-heading .eyebrow {
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 8px;
+}
+
+.reference-dialog-heading h2 {
+  font-size: clamp(26px, 4vw, 38px);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  margin: 0;
+}
+
+.reference-dialog-heading button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 20px;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.reference-list {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.reference-card {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  min-height: 88px;
+  padding: 15px 16px;
+}
+
+.reference-card-icon {
+  align-items: center;
+  background: var(--green-soft);
+  color: var(--green-deep);
+  display: flex;
+  font-size: 10px;
+  font-weight: 750;
+  height: 48px;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  width: 48px;
+}
+
+.reference-card-copy {
+  min-width: 0;
+}
+
+.reference-card-copy strong,
+.reference-card-copy small {
+  display: block;
+}
+
+.reference-card-copy strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.reference-card-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 6px;
+}
+
+.reference-card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.reference-primary-link,
+.reference-secondary-link,
+.reference-app-link {
+  align-items: center;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 0 13px;
+  text-decoration: none;
+}
+
+.reference-primary-link {
+  background: var(--green-deep);
+  color: white;
+}
+
+.reference-secondary-link,
+.reference-app-link {
+  background: #f4f1f5;
+  color: var(--ink);
 }
 
 .expected-benefits-panel .eyebrow.light {
@@ -1744,6 +1913,199 @@ a:focus-visible,
   min-height: 230px;
 }
 
+.reference-builder {
+  display: grid;
+  gap: 18px;
+}
+
+.reference-builder-intro {
+  align-items: center;
+  background: var(--green-soft);
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 18px;
+}
+
+.reference-builder-intro p {
+  color: var(--green-deep);
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 560px;
+}
+
+.reference-builder-intro strong {
+  color: var(--ink);
+}
+
+.reference-builder-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reference-upload-control,
+.reference-add-link {
+  align-items: center;
+  background: white;
+  border: 1px solid rgba(0, 123, 92, 0.24);
+  color: var(--green-deep);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 15px;
+}
+
+.reference-upload-control input {
+  height: 1px;
+  opacity: 0;
+  position: absolute;
+  width: 1px;
+}
+
+.reference-upload-control.disabled,
+.reference-add-link:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.reference-draft-list {
+  display: grid;
+  gap: 9px;
+}
+
+.reference-draft-item {
+  align-items: center;
+  background: #f6fbf7;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 13px;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  padding: 13px;
+}
+
+.reference-draft-icon {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  color: var(--violet);
+  display: flex;
+  font-size: 9px;
+  font-weight: 750;
+  height: 44px;
+  justify-content: center;
+  text-transform: uppercase;
+  width: 44px;
+}
+
+.reference-draft-fields {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(150px, 0.75fr) minmax(180px, 1.25fr);
+  min-width: 0;
+}
+
+.reference-draft-fields > div {
+  min-width: 0;
+}
+
+.reference-draft-fields > div > span,
+.reference-draft-fields > div > strong,
+.reference-draft-fields > div > small {
+  display: block;
+}
+
+.reference-draft-fields > div > span {
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.reference-draft-fields > div > strong {
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.reference-draft-fields label > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.reference-draft-fields input {
+  background: white;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  height: 44px;
+  min-width: 0;
+  outline: none;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.reference-draft-fields input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(0, 156, 119, 0.1);
+}
+
+.reference-draft-meta {
+  color: var(--muted);
+  font-size: 9px;
+  grid-column: 1 / -1;
+  margin-top: -2px;
+}
+
+.reference-remove {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 16px;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.upload-progress {
+  background: #edf7ef;
+  color: var(--green-deep);
+  font-size: 10px;
+  padding: 13px 16px;
+}
+
+.upload-progress > div {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.upload-progress-track {
+  background: rgba(0, 123, 92, 0.15);
+  height: 5px;
+  overflow: hidden;
+}
+
+.upload-progress-track i {
+  background: var(--green);
+  display: block;
+  height: 100%;
+  transition: width 160ms ease;
+}
+
 .form-actions {
   align-items: center;
   background: #e7f3e9;
@@ -2197,6 +2559,91 @@ a:focus-visible,
   margin: 0;
 }
 
+.admin-reference-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-reference-card {
+  background: #f7f4f1;
+  border: 1px solid var(--line);
+  padding: 16px;
+}
+
+.admin-reference-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.admin-reference-heading > span {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.admin-reference-heading a {
+  color: var(--green-deep);
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.admin-reference-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-reference-form > label:first-child,
+.admin-reference-form > label.reference-url-field {
+  grid-column: 1 / -1;
+}
+
+.admin-reference-form label > span {
+  display: block;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.admin-reference-form input[type="text"],
+.admin-reference-form input[type="url"] {
+  background: white;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  height: 44px;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.reference-visibility {
+  align-items: center;
+  display: flex;
+  font-size: 10px;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.admin-reference-form button {
+  background: var(--green-deep);
+  color: white;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+.admin-reference-form button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .verification-bar {
   align-items: center;
   background: var(--ink);
@@ -2560,7 +3007,49 @@ a:focus-visible,
   }
 
   .expected-benefits-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
     padding-bottom: 14px;
+  }
+
+  .reference-trigger {
+    min-height: 44px;
+  }
+
+  .reference-dialog {
+    height: 100dvh;
+    max-height: 100dvh;
+    max-width: 100vw;
+    width: 100vw;
+  }
+
+  .reference-dialog-shell {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .reference-dialog-heading {
+    padding: 22px 18px;
+  }
+
+  .reference-list {
+    padding: 12px;
+  }
+
+  .reference-card {
+    align-items: start;
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .reference-card-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .reference-card-actions a {
+    flex: 1;
+    justify-content: center;
   }
 
   .response-navigation {
@@ -2640,6 +3129,39 @@ a:focus-visible,
 
   .plant-options {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .reference-builder-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reference-builder-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .reference-upload-control,
+  .reference-add-link {
+    justify-content: center;
+  }
+
+  .reference-draft-item {
+    align-items: start;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+
+  .reference-draft-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-reference-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-reference-form > label:first-child,
+  .admin-reference-form > label.reference-url-field {
+    grid-column: auto;
   }
 
   .form-actions {

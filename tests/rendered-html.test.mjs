@@ -18,6 +18,14 @@ test("contains the compact Birla Opus presentation experience", async () => {
   assert.match(canvas, /Edit response/);
   assert.match(canvas, /Approve response/);
   assert.match(canvas, /Reject response/);
+  assert.match(canvas, /Reference media/);
+  assert.match(canvas, /Add HTTPS link/);
+  assert.match(canvas, /Open references/);
+  assert.match(canvas, /Open in app/);
+  assert.match(canvas, /Save reference/);
+  assert.match(canvas, /REFERENCE_FILE_ACCEPT/);
+  assert.match(canvas, /target="_blank"/);
+  assert.match(canvas, /noopener noreferrer/);
   assert.match(canvas, /Refresh now/);
   assert.match(canvas, /3_000/);
   assert.match(canvas, /BroadcastChannel/);

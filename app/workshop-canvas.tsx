@@ -3,20 +3,36 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
+  createReferenceUploadSession,
   listAdminSubmissions,
   listPresentationSubmissions,
   submitWorkshopResponse,
+  updateAdminReference,
   updateAdminSubmission,
+  uploadReferenceFile,
 } from "@/lib/browser-submission-api";
 import type {
   AdminSubmissionUpdateInput,
+  BrowserReferenceMedia,
   BrowserValueStream,
+  ReferenceManifestInput,
+  ReferenceUploadSession,
 } from "@/lib/browser-submission-api";
+import {
+  REFERENCE_FILE_ACCEPT,
+  REFERENCE_LIMITS,
+  classifyReferenceFile,
+  defaultReferenceTitle,
+  formatReferenceSize,
+  referenceKindLabel,
+  validateReferenceSelection,
+} from "@/lib/reference-media";
 import {
   FormEvent,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -46,6 +62,19 @@ type Submission = {
   updatedAt: string;
   submittedAt: string | null;
   referenceId?: string;
+  references: BrowserReferenceMedia[];
+};
+
+type ReferenceLinkDraft = {
+  id: string;
+  title: string;
+  url: string;
+};
+
+type ReferenceFileDraft = {
+  id: string;
+  title: string;
+  file: File;
 };
 
 type FormState = {
@@ -57,6 +86,7 @@ type FormState = {
   useCaseDescriptions: Record<string, string>;
   valueStreams: string[];
   expectedBenefits: string;
+  referenceLinks: ReferenceLinkDraft[];
 };
 
 type AdminEditState = {
@@ -178,6 +208,7 @@ const EMPTY_FORM: FormState = {
   useCaseDescriptions: {},
   valueStreams: [],
   expectedBenefits: "",
+  referenceLinks: [],
 };
 
 function normaliseSubmission(value: Partial<Submission>): Submission {
@@ -210,6 +241,7 @@ function normaliseSubmission(value: Partial<Submission>): Submission {
     createdAt: String(value.createdAt ?? new Date().toISOString()),
     updatedAt: String(value.updatedAt ?? value.createdAt ?? new Date().toISOString()),
     submittedAt: value.submittedAt ? String(value.submittedAt) : null,
+    references: Array.isArray(value.references) ? value.references : [],
   };
 }
 
@@ -262,6 +294,56 @@ function formatSyncTime(value: string) {
   }
 }
 
+function referenceMeta(reference: BrowserReferenceMedia) {
+  if (reference.kind === "link") {
+    try {
+      return new URL(reference.openUrl).hostname;
+    } catch {
+      return "HTTPS web link";
+    }
+  }
+
+  return [
+    referenceKindLabel(reference.kind),
+    reference.sizeBytes === null
+      ? null
+      : formatReferenceSize(reference.sizeBytes),
+  ].filter(Boolean).join(" · ");
+}
+
+function referenceDownloadUrl(reference: BrowserReferenceMedia) {
+  if (!reference.openUrl || reference.kind === "link") return reference.openUrl;
+  try {
+    const url = new URL(reference.openUrl);
+    url.searchParams.set("download", reference.fileName ?? reference.title);
+    return url.toString();
+  } catch {
+    return reference.openUrl;
+  }
+}
+
+function referenceOfficeUrl(reference: BrowserReferenceMedia) {
+  const scheme = reference.kind === "powerpoint"
+    ? "ms-powerpoint"
+    : reference.kind === "word"
+      ? "ms-word"
+      : reference.kind === "spreadsheet"
+        ? "ms-excel"
+        : null;
+  return scheme && reference.openUrl
+    ? `${scheme}:ofv|u|${reference.openUrl}`
+    : null;
+}
+
+function referenceBadge(kind: BrowserReferenceMedia["kind"]) {
+  if (kind === "powerpoint") return "PPT";
+  if (kind === "spreadsheet") return "XLS";
+  if (kind === "word") return "DOC";
+  if (kind === "link") return "URL";
+  if (kind === "image") return "IMG";
+  return "PDF";
+}
+
 function statusLabel(status: Status) {
   if (status === "rejected") return "Needs changes";
   if (status === "submitted") return "Submitted";
@@ -300,7 +382,8 @@ function hasLocalDraftContent(form: FormState) {
       form.designation.trim() ||
       form.selectedUseCase ||
       form.valueStreams.length ||
-      form.expectedBenefits.trim(),
+      form.expectedBenefits.trim() ||
+      form.referenceLinks.length,
   );
 }
 
@@ -548,6 +631,7 @@ function PresentationView({
   onRefresh: () => void;
   onExit: () => void;
 }) {
+  const referenceDialogRef = useRef<HTMLDialogElement>(null);
   const published = useMemo(
     () => submissions.filter((item) => item.status === "approved" && item.isVisible),
     [submissions],
@@ -588,6 +672,13 @@ function PresentationView({
   useEffect(() => {
     if (!activePlant) return;
     const handleKey = (event: globalThis.KeyboardEvent) => {
+      if (referenceDialogRef.current?.open) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          referenceDialogRef.current.close();
+        }
+        return;
+      }
       if (event.key === "Escape") {
         onExit();
         return;
@@ -685,6 +776,9 @@ function PresentationView({
   const plant = getPlant(activePlant);
   const response = plantResponses[responseIndex] ?? null;
   const activeUseCase = chosenUseCase(response);
+  const visibleReferences = response?.references.filter(
+    (reference) => reference.isVisible && Boolean(reference.openUrl),
+  ) ?? [];
 
   return (
     <section className="plant-presentation" style={{ "--plant-accent": plant.accent } as React.CSSProperties}>
@@ -804,6 +898,15 @@ function PresentationView({
               <div className="expected-benefits-footer">
                 <span>{getPlant(response.plant).name}</span>
                 <span>Verified response</span>
+                {visibleReferences.length > 0 && (
+                  <button
+                    className="reference-trigger"
+                    type="button"
+                    onClick={() => referenceDialogRef.current?.showModal()}
+                  >
+                    Open references ({visibleReferences.length}) <span>↗</span>
+                  </button>
+                )}
               </div>
             </article>
           </>
@@ -828,6 +931,72 @@ function PresentationView({
         </span>
         <button type="button" onClick={() => moveResponse(1)} disabled={plantResponses.length < 2}>Next response →</button>
       </div>
+
+      <dialog
+        className="reference-dialog"
+        ref={referenceDialogRef}
+        aria-labelledby="reference-dialog-title"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close();
+        }}
+      >
+        <div className="reference-dialog-shell">
+          <div className="reference-dialog-heading">
+            <div>
+              <p className="eyebrow">Supporting material · {plant.name}</p>
+              <h2 id="reference-dialog-title">Reference media</h2>
+            </div>
+            <button
+              type="button"
+              aria-label="Close reference media"
+              onClick={() => referenceDialogRef.current?.close()}
+            >
+              ×
+            </button>
+          </div>
+          <div className="reference-list">
+            {visibleReferences.map((reference) => {
+              const officeUrl = referenceOfficeUrl(reference);
+              return (
+                <article className="reference-card" key={reference.id}>
+                  <span className="reference-card-icon" aria-hidden="true">
+                    {referenceBadge(reference.kind)}
+                  </span>
+                  <div className="reference-card-copy">
+                    <strong>{reference.title}</strong>
+                    <small>{referenceMeta(reference)}</small>
+                  </div>
+                  <div className="reference-card-actions">
+                    <a
+                      className="reference-primary-link"
+                      href={reference.openUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {reference.kind === "link" ? "Open link" : `Open ${referenceKindLabel(reference.kind)}`} ↗
+                    </a>
+                    {officeUrl && (
+                      <a className="reference-app-link" href={officeUrl}>
+                        Open in app
+                      </a>
+                    )}
+                    {reference.kind !== "link" && (
+                      <a
+                        className="reference-secondary-link"
+                        href={referenceDownloadUrl(reference)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Download
+                      </a>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </dialog>
     </section>
   );
 }
@@ -845,8 +1014,21 @@ function SubmissionView({
   const [savedReference, setSavedReference] = useState("");
   const [lastSubmittedAt, setLastSubmittedAt] = useState<string | null>(null);
   const [draftReady, setDraftReady] = useState(false);
+  const [referenceFiles, setReferenceFiles] = useState<ReferenceFileDraft[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [fileInputKey, setFileInputKey] = useState(0);
   const active = getPlant(form.plant);
   const percent = completion(form);
+  const totalReferenceItems = referenceFiles.length + form.referenceLinks.length;
+  const aggregateUploadProgress = referenceFiles.length
+    ? Math.round(
+        referenceFiles.reduce(
+          (total, reference) => total + (uploadProgress[reference.id] ?? 0),
+          0,
+        ) / referenceFiles.length * 100,
+      )
+    : 0;
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
@@ -861,6 +1043,18 @@ function SubmissionView({
             draft.useCaseDescriptions && typeof draft.useCaseDescriptions === "object"
               ? draft.useCaseDescriptions
               : {};
+          const referenceLinks = Array.isArray(draft.referenceLinks)
+            ? draft.referenceLinks
+                .filter((item): item is ReferenceLinkDraft => Boolean(
+                  item && typeof item.title === "string" && typeof item.url === "string",
+                ))
+                .slice(0, REFERENCE_LIMITS.maxLinks)
+                .map((item) => ({
+                  id: item.id || crypto.randomUUID(),
+                  title: item.title,
+                  url: item.url,
+                }))
+            : [];
           setForm({
             plant: PLANTS.some((plant) => plant.id === draft.plant)
               ? String(draft.plant)
@@ -874,6 +1068,7 @@ function SubmissionView({
               ? draft.valueStreams.filter((stream) => VALUE_STREAMS.includes(stream)).slice(0, 1)
               : [],
             expectedBenefits: String(draft.expectedBenefits ?? ""),
+            referenceLinks,
           });
           onSaved("Your saved draft was restored on this device.");
         }
@@ -902,6 +1097,55 @@ function SubmissionView({
     }));
   };
 
+  const referenceFileInputs = (files: readonly ReferenceFileDraft[]) =>
+    files.map((reference) => ({
+      name: reference.file.name,
+      size: reference.file.size,
+      type: reference.file.type,
+      title: reference.title,
+    }));
+
+  const addReferenceLink = () => {
+    if (
+      totalReferenceItems >= REFERENCE_LIMITS.maxItems ||
+      form.referenceLinks.length >= REFERENCE_LIMITS.maxLinks
+    ) return;
+    setForm((current) => ({
+      ...current,
+      referenceLinks: [
+        ...current.referenceLinks,
+        { id: crypto.randomUUID(), title: "", url: "https://" },
+      ],
+    }));
+  };
+
+  const chooseReferenceFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    const available = Math.min(
+      REFERENCE_LIMITS.maxFiles - referenceFiles.length,
+      REFERENCE_LIMITS.maxItems - totalReferenceItems,
+    );
+    const additions = Array.from(files)
+      .slice(0, Math.max(0, available))
+      .map((file) => ({
+        id: crypto.randomUUID(),
+        title: defaultReferenceTitle(file.name),
+        file,
+      }));
+    const nextFiles = [...referenceFiles, ...additions];
+    const validation = validateReferenceSelection(
+      referenceFileInputs(nextFiles),
+      form.referenceLinks,
+    );
+    if (!validation.valid) {
+      setErrors(validation.errors);
+      return;
+    }
+    setErrors([]);
+    setReferenceFiles(nextFiles);
+    setUploadProgress({});
+  };
+
   const validate = () => {
     const next: string[] = [];
     if (!form.submitterName.trim()) next.push("Add the leader’s name.");
@@ -914,6 +1158,12 @@ function SubmissionView({
     }
     if (form.valueStreams.length !== 1) next.push("Select one value stream.");
     if (!form.expectedBenefits.trim()) next.push("Describe the expected benefits.");
+    next.push(
+      ...validateReferenceSelection(
+        referenceFileInputs(referenceFiles),
+        form.referenceLinks,
+      ).errors,
+    );
     setErrors(next);
     return next.length === 0;
   };
@@ -923,6 +1173,47 @@ function SubmissionView({
     setIsSaving(true);
     setErrors([]);
     try {
+      let mediaSession: ReferenceUploadSession | null = null;
+      let uploadedReferences: ReferenceManifestInput[] = [];
+      if (referenceFiles.length > 0) {
+        setUploadMessage("Preparing secure reference uploads…");
+        setUploadProgress(Object.fromEntries(
+          referenceFiles.map((reference) => [reference.id, 0]),
+        ));
+        const activeSession = await createReferenceUploadSession();
+        mediaSession = activeSession;
+        uploadedReferences = await Promise.all(
+          referenceFiles.map(async (reference, index) => {
+            setUploadMessage(
+              `Uploading ${referenceFiles.length} reference file${referenceFiles.length === 1 ? "" : "s"}…`,
+            );
+            const uploaded = await uploadReferenceFile(
+              activeSession,
+              reference.file,
+              index + 1,
+              (progress) => setUploadProgress((current) => ({
+                ...current,
+                [reference.id]: progress,
+              })),
+            );
+            return {
+              ...uploaded,
+              title: reference.title.trim(),
+              sortOrder: form.referenceLinks.length + index,
+            };
+          }),
+        );
+      }
+
+      setUploadMessage("Saving the response for admin verification…");
+      const linkReferences: ReferenceManifestInput[] = form.referenceLinks.map(
+        (reference, index) => ({
+          title: reference.title.trim(),
+          kind: "link",
+          externalUrl: reference.url.trim(),
+          sortOrder: index,
+        }),
+      );
       const payload = await submitWorkshopResponse({
         plant: form.plant as AdminSubmissionUpdateInput["plant"],
         submitterName: form.submitterName,
@@ -937,6 +1228,8 @@ function SubmissionView({
           String(VALUE_STREAMS.indexOf(form.valueStreams[0]) + 1) as BrowserValueStream,
         ],
         expectedBenefits: form.expectedBenefits.trim(),
+        references: [...linkReferences, ...uploadedReferences],
+        mediaSession,
       });
       const reference = payload.submission?.referenceId ?? payload.submission?.id ?? "Saved";
       setSavedReference(reference);
@@ -944,9 +1237,17 @@ function SubmissionView({
       onSaved("Response submitted for verification. You can enter another response now.");
       window.localStorage.removeItem(LOCAL_DRAFT_KEY);
       setForm(EMPTY_FORM);
-    } catch {
-      setErrors(["We could not save this response. Your entries are still on screen—please try again."]);
+      setReferenceFiles([]);
+      setUploadProgress({});
+      setFileInputKey((current) => current + 1);
+    } catch (error) {
+      setErrors([
+        error instanceof Error && error.message
+          ? error.message
+          : "We could not save this response. Your entries are still on screen—please try again.",
+      ]);
     } finally {
+      setUploadMessage("");
       setIsSaving(false);
     }
   };
@@ -956,7 +1257,11 @@ function SubmissionView({
     setErrors([]);
     setSavedReference("");
     setLastSubmittedAt(null);
-    onSaved("Draft saved on this device.");
+    onSaved(
+      referenceFiles.length
+        ? "Draft text and links saved. Selected files remain attached only while this tab stays open."
+        : "Draft saved on this device.",
+    );
   };
 
   const submitForm = (event: FormEvent) => {
@@ -1162,6 +1467,174 @@ function SubmissionView({
             </label>
           </fieldset>
 
+          <fieldset className="form-section">
+            <legend>
+              <span>06</span>
+              <div>
+                Reference media
+                <small>Optional supporting links and files for the workshop discussion.</small>
+              </div>
+            </legend>
+            <div className="reference-builder">
+              <div className="reference-builder-intro">
+                <p>
+                  <strong>{totalReferenceItems} of {REFERENCE_LIMITS.maxItems} references added.</strong>{" "}
+                  Add up to {REFERENCE_LIMITS.maxFiles} files and {REFERENCE_LIMITS.maxLinks} HTTPS links.
+                  Files may be PDF, PPTX, DOCX, XLSX, JPG, PNG or WebP; each file is limited to {formatReferenceSize(REFERENCE_LIMITS.maxFileBytes)} and all files together to {formatReferenceSize(REFERENCE_LIMITS.maxTotalFileBytes)}.
+                </p>
+                <div className="reference-builder-actions">
+                  <label
+                    className={`reference-upload-control${
+                      isSaving ||
+                      referenceFiles.length >= REFERENCE_LIMITS.maxFiles ||
+                      totalReferenceItems >= REFERENCE_LIMITS.maxItems
+                        ? " disabled"
+                        : ""
+                    }`}
+                  >
+                    <input
+                      key={fileInputKey}
+                      type="file"
+                      accept={REFERENCE_FILE_ACCEPT}
+                      multiple
+                      disabled={
+                        isSaving ||
+                        referenceFiles.length >= REFERENCE_LIMITS.maxFiles ||
+                        totalReferenceItems >= REFERENCE_LIMITS.maxItems
+                      }
+                      onChange={(event) => {
+                        chooseReferenceFiles(event.currentTarget.files);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    + Add files
+                  </label>
+                  <button
+                    className="reference-add-link"
+                    type="button"
+                    disabled={
+                      isSaving ||
+                      form.referenceLinks.length >= REFERENCE_LIMITS.maxLinks ||
+                      totalReferenceItems >= REFERENCE_LIMITS.maxItems
+                    }
+                    onClick={addReferenceLink}
+                  >
+                    + Add HTTPS link
+                  </button>
+                </div>
+              </div>
+
+              {(form.referenceLinks.length > 0 || referenceFiles.length > 0) && (
+                <div className="reference-draft-list">
+                  {form.referenceLinks.map((reference) => (
+                    <article className="reference-draft-item" key={reference.id}>
+                      <span className="reference-draft-icon" aria-hidden="true">URL</span>
+                      <div className="reference-draft-fields">
+                        <label>
+                          <span>Display title</span>
+                          <input
+                            value={reference.title}
+                            maxLength={REFERENCE_LIMITS.maxTitleLength}
+                            placeholder="What should the workshop see?"
+                            onChange={(event) => setForm((current) => ({
+                              ...current,
+                              referenceLinks: current.referenceLinks.map((item) =>
+                                item.id === reference.id
+                                  ? { ...item, title: event.target.value }
+                                  : item,
+                              ),
+                            }))}
+                          />
+                        </label>
+                        <label>
+                          <span>HTTPS link</span>
+                          <input
+                            type="url"
+                            value={reference.url}
+                            maxLength={REFERENCE_LIMITS.maxUrlLength}
+                            placeholder="https://…"
+                            onChange={(event) => setForm((current) => ({
+                              ...current,
+                              referenceLinks: current.referenceLinks.map((item) =>
+                                item.id === reference.id
+                                  ? { ...item, url: event.target.value }
+                                  : item,
+                              ),
+                            }))}
+                          />
+                        </label>
+                        <small className="reference-draft-meta">Web link · opens in a new tab</small>
+                      </div>
+                      <button
+                        className="reference-remove"
+                        type="button"
+                        aria-label={`Remove ${reference.title || "web link"}`}
+                        disabled={isSaving}
+                        onClick={() => setForm((current) => ({
+                          ...current,
+                          referenceLinks: current.referenceLinks.filter((item) => item.id !== reference.id),
+                        }))}
+                      >
+                        ×
+                      </button>
+                    </article>
+                  ))}
+
+                  {referenceFiles.map((reference) => {
+                    const classification = classifyReferenceFile(reference.file);
+                    return (
+                      <article className="reference-draft-item" key={reference.id}>
+                        <span className="reference-draft-icon" aria-hidden="true">
+                          {classification ? referenceBadge(classification.kind) : "FILE"}
+                        </span>
+                        <div className="reference-draft-fields">
+                          <label>
+                            <span>Display title</span>
+                            <input
+                              value={reference.title}
+                              maxLength={REFERENCE_LIMITS.maxTitleLength}
+                              onChange={(event) => setReferenceFiles((current) =>
+                                current.map((item) => item.id === reference.id
+                                  ? { ...item, title: event.target.value }
+                                  : item),
+                              )}
+                            />
+                          </label>
+                          <div>
+                            <span>Selected file</span>
+                            <strong>{reference.file.name}</strong>
+                            <small className="reference-draft-meta">
+                              {classification ? referenceKindLabel(classification.kind) : "File"} · {formatReferenceSize(reference.file.size)} · reattach after reopening a saved draft
+                            </small>
+                          </div>
+                        </div>
+                        <button
+                          className="reference-remove"
+                          type="button"
+                          aria-label={`Remove ${reference.file.name}`}
+                          disabled={isSaving}
+                          onClick={() => {
+                            setReferenceFiles((current) => current.filter((item) => item.id !== reference.id));
+                            setUploadProgress({});
+                          }}
+                        >
+                          ×
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+
+              {uploadMessage && referenceFiles.length > 0 && (
+                <div className="upload-progress" role="status" aria-live="polite">
+                  <div><span>{uploadMessage}</span><strong>{aggregateUploadProgress}%</strong></div>
+                  <span className="upload-progress-track"><i style={{ width: `${aggregateUploadProgress}%` }} /></span>
+                </div>
+              )}
+            </div>
+          </fieldset>
+
           <div className="form-actions">
             <div><span>Local draft</span><small>Saved only on this device until submitted</small></div>
             <button className="secondary-action" type="button" onClick={saveLocalDraft} disabled={isSaving}>Save draft</button>
@@ -1170,6 +1643,105 @@ function SubmissionView({
         </form>
       </div>
     </section>
+  );
+}
+
+function AdminReferenceCard({
+  reference,
+  capability,
+  onSaved,
+}: {
+  reference: BrowserReferenceMedia;
+  capability: string | null;
+  onSaved: (message: string) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(reference.title);
+  const [externalUrl, setExternalUrl] = useState(reference.externalUrl ?? "");
+  const [isVisible, setIsVisible] = useState(reference.isVisible);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!capability) return;
+    if (reference.kind === "link") {
+      const validation = validateReferenceSelection([], [{ title, url: externalUrl }]);
+      if (!validation.valid) {
+        setError(validation.errors[0] ?? "Check this reference link.");
+        return;
+      }
+    } else if (!title.trim()) {
+      setError("Reference title is required.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    try {
+      await updateAdminReference(capability, {
+        id: reference.id,
+        title: title.trim(),
+        externalUrl: reference.kind === "link" ? externalUrl.trim() : null,
+        isVisible,
+      });
+      announceSubmissionChange();
+      await onSaved("Reference media updated.");
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error && updateError.message
+          ? updateError.message
+          : "This reference could not be updated.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <article className="admin-reference-card">
+      <div className="admin-reference-heading">
+        <span>{referenceMeta(reference)}</span>
+        {reference.openUrl && (
+          <a href={reference.openUrl} target="_blank" rel="noopener noreferrer">
+            Open reference ↗
+          </a>
+        )}
+      </div>
+      <form className="admin-reference-form" onSubmit={save}>
+        <label>
+          <span>Display title</span>
+          <input
+            type="text"
+            value={title}
+            maxLength={REFERENCE_LIMITS.maxTitleLength}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </label>
+        {reference.kind === "link" && (
+          <label className="reference-url-field">
+            <span>HTTPS URL</span>
+            <input
+              type="url"
+              value={externalUrl}
+              maxLength={REFERENCE_LIMITS.maxUrlLength}
+              onChange={(event) => setExternalUrl(event.target.value)}
+            />
+          </label>
+        )}
+        <label className="reference-visibility">
+          <input
+            type="checkbox"
+            checked={isVisible}
+            onChange={(event) => setIsVisible(event.target.checked)}
+          />
+          Include with the approved response
+        </label>
+        <button type="submit" disabled={isSaving || !capability}>
+          {isSaving ? "Saving…" : "Save reference"}
+        </button>
+        {error && <small className="reference-draft-meta" role="alert">{error}</small>}
+      </form>
+    </article>
   );
 }
 
@@ -1463,6 +2035,22 @@ function ReviewView({
                   <p className="detail-benefits">{selected.expectedBenefits}</p>
                 </div>
               </div>
+
+              {selected.references.length > 0 && (
+                <div className="detail-section">
+                  <div className="detail-label"><span>04</span><strong>Reference media</strong></div>
+                  <div className="admin-reference-list">
+                    {selected.references.map((reference) => (
+                      <AdminReferenceCard
+                        key={`${reference.id}-${reference.title}-${reference.externalUrl ?? ""}-${reference.isVisible}`}
+                        reference={reference}
+                        capability={capability}
+                        onSaved={onChanged}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="verification-bar">
                 <div>

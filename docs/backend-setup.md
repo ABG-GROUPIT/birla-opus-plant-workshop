@@ -13,9 +13,12 @@ call only these PostgREST RPC functions:
 | RPC | Browser use | Database guarantee |
 | --- | --- | --- |
 | `workshop_public_list()` | Load the presentation | Returns only approved and visible rows, excluding email and designation |
-| `workshop_submit(...)` | Submit a leader response | Validates fixed fields, creates the identifiers and timestamps, and forces `submitted` plus hidden |
+| `workshop_media_session_create()` | Prepare optional file uploads | Returns a random one-hour capability while storing only its SHA-256 digest |
+| `workshop_submit_with_references(...)` | Submit a response and its references | Validates the response, links, actual Storage objects, count and byte limits in one transaction |
+| `workshop_submit(...)` | Compatibility submission path | Keeps already-open older form tabs working without reference media |
 | `workshop_admin_list(p_capability)` | Load the review queue | Validates the admin capability before returning full review data |
 | `workshop_admin_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency |
+| `workshop_admin_reference_update(...)` | Review one reference | Lets an administrator correct its title/link or exclude it from the presentation |
 
 The tables do not grant direct access to `anon` or `authenticated`. The RPCs are
 `SECURITY DEFINER` functions with a restricted search path and narrowly scoped
@@ -39,23 +42,46 @@ workflow:
 
 1. [`202607160001_workshop_submissions.sql`](../supabase/migrations/202607160001_workshop_submissions.sql)
 2. [`202607160002_static_browser_rpc.sql`](../supabase/migrations/202607160002_static_browser_rpc.sql)
+3. [`202607160003_reference_media.sql`](../supabase/migrations/202607160003_reference_media.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
 revocations. The second migration creates the private capability store and the
-four public RPC entry points, grants only the required RPC execution, and keeps
-the underlying tables closed to browser roles.
+original public RPC entry points, grants only the required RPC execution, and
+keeps the underlying tables closed to browser roles. The third migration adds
+the `workshop-references` Storage bucket, short-lived upload sessions, reference
+metadata, restricted anonymous uploads, admin reference controls, and reference
+fields in the public/admin response envelopes.
 
 The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying both migrations, confirm that:
+After applying all three migrations, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
-- the four `public.workshop_*` RPC functions exist;
+- the intended `public.workshop_*` RPC functions exist;
 - `anon` cannot select, insert, or update either table directly; and
-- `anon` can execute only the intended RPC functions.
+- `anon` can execute only the intended RPC functions;
+- `storage.buckets` contains `workshop-references` with a 10 MiB per-file cap;
+- anonymous uploads fail unless the object path contains an active media-session
+  ID and its matching raw capability; and
+- the upload session becomes unusable after submission or one hour.
+
+### Reference-media limits
+
+- Four reference items per response.
+- Three uploaded files and two HTTPS links within that four-item total.
+- 10 MiB per file and 25 MiB total uploaded bytes per response.
+- PDF, PPTX, DOCX, XLSX, JPEG, PNG, and WebP only.
+- Legacy or macro-enabled Office files, archives, HTML/SVG, audio/video, and
+  executables are rejected.
+
+The browser uses resumable uploads, so the textual response remains lightweight
+and larger workshop documents can retry interrupted chunks. Links consume no
+Storage quota. Supabase Free currently provides 1 GB file storage and allows up
+to 50 MB per individual file; this application intentionally stays below those
+platform limits.
 
 ## 2. Configure the browser-safe Supabase values
 
@@ -69,8 +95,10 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_BASE_PATH=
 ```
 
-The workshop browser adapter sends the publishable key in the `apikey` header.
-It does not send a secret key, service-role key, or database password.
+PostgREST RPC calls send the publishable key in the `apikey` header. Resumable
+file uploads send that same browser-safe key as both `apikey` and Bearer
+authorization to the direct `https://<PROJECT_REF>.storage.supabase.co` host.
+They do not send a secret key, service-role key, or database password.
 
 ## 3. Use the complete admin capability link
 
@@ -125,16 +153,45 @@ Use an identifiable test response, then remove or reject it after testing:
 
 1. Open the leader form, enter partial wording, save a local draft, refresh, and
    confirm that the draft remains on that device.
-2. Complete the form and submit it. Confirm that a reference and submission time
-   appear promptly.
+2. Add an HTTPS link and a small PDF/PPTX, then complete and submit the form.
+   Confirm upload progress, a response reference, and submission time appear.
 3. Open the complete admin capability link. Confirm the new response appears in
-   the submitted queue.
-4. Edit the wording, save it, and approve the response.
+   the submitted queue and both references can be opened.
+4. Edit the wording, hide/show one reference, save it, and approve the response.
 5. Open the presentation and confirm that the approved response appears under
-   the correct plant.
+   the correct plant and **Open references** exposes only included items.
 6. Reject the response and confirm that it no longer appears in the
    presentation.
 7. Redeploy the static site and confirm that the Supabase response still exists.
+
+### Live Storage smoke test
+
+For one small PNG, PDF, or PPTX, use the browser developer tools **Network**
+panel to verify the complete upload chain:
+
+1. `POST /rest/v1/rpc/workshop_media_session_create` returns `sessionId`,
+   `uploadToken`, and `expiresAt`.
+2. The TUS create request goes to
+   `https://<PROJECT_REF>.storage.supabase.co/storage/v1/upload/resumable` with
+   `apikey: sb_publishable_...` and
+   `Authorization: Bearer sb_publishable_...`. It must not contain a secret or
+   service-role key.
+3. The create request returns `201`, subsequent TUS `PATCH` requests return
+   `204`, and no request returns `401` or `403`.
+4. `POST /rest/v1/rpc/workshop_submit_with_references` succeeds, and the new
+   response and file appear in the admin review queue.
+5. Approve the response and confirm the presentation opens the included file.
+
+Only the migration's capability-checked `INSERT` policy should exist for these
+anonymous Storage uploads; a `SELECT` policy is neither created nor required by
+this TUS flow. A successful live upload with the publishable key while no
+Storage `SELECT` policy exists is the final production check of that assumption.
+The one-hour capability/RLS design intentionally does not use signed-upload
+tokens or an `x-signature` header.
+
+After testing, reject the identifiable response so it leaves the presentation.
+If the test object must also be removed, delete it through the Supabase Storage
+dashboard/API; do not delete rows directly from `storage.objects` with SQL.
 
 The presentation read is enforced inside `workshop_public_list`, not by a query
 parameter chosen by the browser. A row cannot reach the public presentation

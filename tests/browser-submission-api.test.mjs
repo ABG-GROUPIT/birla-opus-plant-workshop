@@ -3,9 +3,12 @@ import { after, test } from "node:test";
 
 import {
   BrowserSubmissionApiError,
+  createReferenceUploadSession,
   listAdminSubmissions,
   listPresentationSubmissions,
+  referenceUploadTransport,
   submitWorkshopResponse,
+  updateAdminReference,
   updateAdminSubmission,
 } from "../lib/browser-submission-api.ts";
 
@@ -52,6 +55,35 @@ const publicSubmission = {
   expectedBenefits: "Faster planning.",
   status: "approved",
   isVisible: true,
+  references: [
+    {
+      id: "26b8d5f0-8c6a-41ce-bbd6-7113cc184b95",
+      title: "Line planning deck",
+      kind: "powerpoint",
+      externalUrl: null,
+      objectPath: "session-a/plant planning deck.pptx",
+      fileName: "plant planning deck.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      sizeBytes: 512000,
+      isVisible: true,
+      sortOrder: 0,
+      openUrl:
+        "https://example.supabase.co/storage/v1/object/public/workshop-references/session-a/plant%20planning%20deck.pptx",
+    },
+    {
+      id: "df65694e-5129-4a91-b86b-378c1439bd36",
+      title: "Supplier reference",
+      kind: "link",
+      externalUrl: "https://example.org/reference",
+      objectPath: null,
+      fileName: null,
+      mimeType: null,
+      sizeBytes: null,
+      isVisible: true,
+      sortOrder: 1,
+      openUrl: "https://example.org/reference",
+    },
+  ],
 };
 
 const adminSubmission = {
@@ -66,7 +98,13 @@ const adminSubmission = {
 
 test("reads presentation rows through the public RPC with only the publishable key", async (t) => {
   const requests = captureFetch(t, {
-    submissions: [publicSubmission],
+    submissions: [{
+      ...publicSubmission,
+      references: publicSubmission.references.map((reference) =>
+        Object.fromEntries(
+          Object.entries(reference).filter(([key]) => key !== "openUrl"),
+        )),
+    }],
     count: 1,
   });
 
@@ -87,7 +125,7 @@ test("reads presentation rows through the public RPC with only the publishable k
   assert.equal(headers.get("authorization"), null);
 });
 
-test("submits one fixed use case and value stream through workshop_submit", async (t) => {
+test("submits one fixed use case and value stream through the references-aware RPC", async (t) => {
   const requests = captureFetch(t, {
     submission: {
       id: publicSubmission.id,
@@ -115,7 +153,7 @@ test("submits one fixed use case and value stream through workshop_submit", asyn
   });
   assert.equal(
     requests[0].input,
-    "https://example.supabase.co/rest/v1/rpc/workshop_submit",
+    "https://example.supabase.co/rest/v1/rpc/workshop_submit_with_references",
   );
   assert.deepEqual(JSON.parse(requests[0].init.body), {
     p_plant: "Panipat",
@@ -125,7 +163,131 @@ test("submits one fixed use case and value stream through workshop_submit", asyn
     p_use_cases: ["", "Short use case", "", ""],
     p_value_stream: "3",
     p_expected_benefits: "Faster planning.",
+    p_media_session_id: null,
+    p_media_upload_token: null,
+    p_references: [],
   });
+});
+
+test("creates and parses a media upload session", async (t) => {
+  const requests = captureFetch(t, {
+    session: {
+      sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
+      uploadToken: "unguessable-media-token",
+      expiresAt: "2026-07-16T13:00:00.000Z",
+    },
+  });
+
+  assert.deepEqual(await createReferenceUploadSession(), {
+    sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
+    uploadToken: "unguessable-media-token",
+    expiresAt: "2026-07-16T13:00:00.000Z",
+  });
+  assert.equal(
+    requests[0].input,
+    "https://example.supabase.co/rest/v1/rpc/workshop_media_session_create",
+  );
+  assert.deepEqual(JSON.parse(requests[0].init.body), {});
+});
+
+test("uses the direct Storage TUS endpoint and browser-safe upload headers", () => {
+  const transport = referenceUploadTransport({
+    sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
+    uploadToken: "unguessable-media-token",
+    expiresAt: "2026-07-16T13:00:00.000Z",
+  }, 2);
+
+  assert.deepEqual(transport, {
+    endpoint: "https://example.storage.supabase.co/storage/v1/upload/resumable",
+    headers: {
+      apikey: "sb_publishable_browser_safe",
+      authorization: "Bearer sb_publishable_browser_safe",
+    },
+    objectPath:
+      "c1a68276-3d94-48e3-849b-dc63add47d94/unguessable-media-token/2",
+  });
+  assert.equal("x-signature" in transport.headers, false);
+});
+
+test("rejects upload slots outside the three capability-scoped paths", () => {
+  assert.throws(
+    () => referenceUploadTransport({
+      sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
+      uploadToken: "unguessable-media-token",
+      expiresAt: null,
+    }, 4),
+    (error) =>
+      error instanceof BrowserSubmissionApiError &&
+      error.code === "invalid_reference_slot",
+  );
+});
+
+test("submits link and uploaded-file manifests with the media capability", async (t) => {
+  const requests = captureFetch(t, {
+    submission: {
+      id: publicSubmission.id,
+      referenceId: "BO-F01CF1C7",
+      submittedAt: "2026-07-16T10:00:00.000Z",
+    },
+  });
+
+  await submitWorkshopResponse({
+    plant: "Panipat",
+    submitterName: "Plant leader",
+    submitterEmail: "leader@example.com",
+    designation: "Plant Head",
+    useCases: ["", "Short use case", "", ""],
+    valueStreams: ["3"],
+    expectedBenefits: "Faster planning.",
+    mediaSession: {
+      sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
+      uploadToken: "unguessable-media-token",
+      expiresAt: "2026-07-16T13:00:00.000Z",
+    },
+    references: [
+      {
+        title: "Supplier reference",
+        kind: "link",
+        externalUrl: "https://example.org/reference",
+        sortOrder: 0,
+      },
+      {
+        title: "Line planning deck",
+        kind: "powerpoint",
+        objectPath: "session-a/plant-planning-deck.pptx",
+        fileName: "plant-planning-deck.pptx",
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        sizeBytes: 512000,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  const body = JSON.parse(requests[0].init.body);
+  assert.equal(body.p_media_session_id, "c1a68276-3d94-48e3-849b-dc63add47d94");
+  assert.equal(body.p_media_upload_token, "unguessable-media-token");
+  assert.deepEqual(body.p_references, [
+    {
+      title: "Supplier reference",
+      kind: "link",
+      externalUrl: "https://example.org/reference",
+      objectPath: null,
+      fileName: null,
+      mimeType: null,
+      sizeBytes: null,
+      sortOrder: 0,
+    },
+    {
+      title: "Line planning deck",
+      kind: "powerpoint",
+      externalUrl: null,
+      objectPath: "session-a/plant-planning-deck.pptx",
+      fileName: "plant-planning-deck.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      sizeBytes: 512000,
+      sortOrder: 1,
+    },
+  ]);
 });
 
 test("passes the URL capability only in admin RPC request bodies", async (t) => {
@@ -187,6 +349,39 @@ test("sends a complete optimistic admin update and unwraps the updated row", asy
     p_expected_benefits: "Faster planning.",
     p_status: "rejected",
   });
+});
+
+test("updates one admin reference without putting the capability in the URL", async (t) => {
+  const updatedReference = {
+    ...publicSubmission.references[1],
+    title: "Approved supplier reference",
+    externalUrl: "https://example.org/approved-reference",
+    isVisible: false,
+    openUrl: "https://example.org/approved-reference",
+  };
+  const requests = captureFetch(t, { reference: updatedReference });
+
+  assert.deepEqual(
+    await updateAdminReference("unguessable-capability", {
+      id: updatedReference.id,
+      title: updatedReference.title,
+      externalUrl: updatedReference.externalUrl,
+      isVisible: false,
+    }),
+    { reference: updatedReference },
+  );
+  assert.equal(
+    requests[0].input,
+    "https://example.supabase.co/rest/v1/rpc/workshop_admin_reference_update",
+  );
+  assert.deepEqual(JSON.parse(requests[0].init.body), {
+    p_capability: "unguessable-capability",
+    p_reference_id: updatedReference.id,
+    p_title: "Approved supplier reference",
+    p_external_url: "https://example.org/approved-reference",
+    p_is_visible: false,
+  });
+  assert.equal(requests[0].input.includes("unguessable-capability"), false);
 });
 
 test("surfaces useful PostgREST errors without leaking an authorization header", async (t) => {
