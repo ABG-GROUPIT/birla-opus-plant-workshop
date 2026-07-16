@@ -7,8 +7,8 @@ test("contains the compact Birla Opus presentation experience", async () => {
     new URL("../app/workshop-canvas.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(canvas, /One workshop/);
-  assert.match(canvas, /Seven points of view/);
+  assert.match(canvas, /Industrial AI/);
+  assert.match(canvas, /Exploration Workshop/);
   assert.match(canvas, /Use case title/);
   assert.match(canvas, /Theme \/ definition/);
   assert.match(canvas, /Submit a new form for every additional use case/);
