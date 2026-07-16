@@ -10,12 +10,13 @@ const completeResponse = {
   submitterName: "Plant leader",
   submitterEmail: "leader@example.com",
   designation: "Plant Head",
-  useCases: ["", "Short use-case description", "", ""],
+  useCaseTitle: "Predictive maintenance",
+  useCaseTheme: "Use equipment signals to intervene before a stoppage.",
   valueStreams: ["1"],
   expectedBenefits: "A measurable expected benefit.",
 };
 
-test("accepts exactly one described use-case slot", () => {
+test("accepts one titled use case with a defined theme", () => {
   assert.deepEqual(getSubmissionCompletionErrors(completeResponse), []);
 });
 
@@ -26,22 +27,22 @@ test("requires completeness only for submitted and approved records", () => {
   assert.equal(requiresCompleteResponse("approved"), true);
 });
 
-test("requires a selected use case and its description", () => {
+test("requires the use-case title", () => {
   const errors = getSubmissionCompletionErrors({
     ...completeResponse,
-    useCases: ["", "", "", ""],
+    useCaseTitle: "",
   });
 
-  assert.ok(errors.includes("Choose one use case and provide its description"));
+  assert.ok(errors.includes("useCaseTitle is required"));
 });
 
-test("rejects responses with descriptions in multiple use-case slots", () => {
+test("requires the use-case theme", () => {
   const errors = getSubmissionCompletionErrors({
     ...completeResponse,
-    useCases: ["First", "", "Third", ""],
+    useCaseTheme: "",
   });
 
-  assert.ok(errors.includes("Only one use case may have a description"));
+  assert.ok(errors.includes("useCaseTheme is required"));
 });
 
 test("requires exactly one fixed value stream", () => {

@@ -2,7 +2,8 @@ export interface SubmissionCompletionInput {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: readonly string[];
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: readonly string[];
   expectedBenefits: string;
 }
@@ -34,13 +35,11 @@ export function getSubmissionCompletionErrors(
     details.push("designation is required");
   }
 
-  const describedUseCaseCount = submission.useCases.filter(
-    (description) => description.trim().length > 0,
-  ).length;
-  if (describedUseCaseCount === 0) {
-    details.push("Choose one use case and provide its description");
-  } else if (describedUseCaseCount > 1) {
-    details.push("Only one use case may have a description");
+  if (!submission.useCaseTitle.trim()) {
+    details.push("useCaseTitle is required");
+  }
+  if (!submission.useCaseTheme.trim()) {
+    details.push("useCaseTheme is required");
   }
 
   if (submission.valueStreams.length === 0) {

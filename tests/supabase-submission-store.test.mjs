@@ -9,7 +9,9 @@ const stored = {
   submitterName: "Plant leader",
   submitterEmail: "leader@example.com",
   designation: "Plant Head",
-  useCases: ["", "Selected use case", "", ""],
+  useCaseTitle: "Predictive maintenance",
+  useCaseTheme: "Selected use case",
+  useCases: ["Selected use case", "", "", ""],
   valueStreams: ["3"],
   expectedBenefits: "Faster planning with fewer manual handoffs.",
   status: "submitted",
@@ -26,8 +28,10 @@ const row = {
   submitter_name: stored.submitterName,
   submitter_email: stored.submitterEmail,
   designation: stored.designation,
-  use_case_1: "",
-  use_case_2: "Selected use case",
+  use_case_title: stored.useCaseTitle,
+  use_case_theme: stored.useCaseTheme,
+  use_case_1: "Selected use case",
+  use_case_2: "",
   use_case_3: "",
   use_case_4: "",
   value_stream_1_selected: false,
@@ -65,6 +69,8 @@ test("creates a Supabase row without exposing a new secret key as Bearer auth", 
   assert.equal(headers.get("authorization"), null);
   const body = JSON.parse(captured.init.body);
   assert.equal(body.designation, "Plant Head");
+  assert.equal(body.use_case_title, "Predictive maintenance");
+  assert.equal(body.use_case_theme, "Selected use case");
   assert.equal(body.value_stream_3_selected, true);
 });
 
@@ -110,4 +116,3 @@ test("uses updated_at for optimistic concurrency on direct admin edits", async (
     `eq.${stored.updatedAt}`,
   );
 });
-

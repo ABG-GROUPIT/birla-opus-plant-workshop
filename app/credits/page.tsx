@@ -37,6 +37,12 @@ const credits = [
     creator: "Jayanta Kr Golder",
     href: "https://unsplash.com/photos/8g2XxmjPpvs",
   },
+  {
+    plant: "Head Office (Mumbai)",
+    region: "Mumbai, Maharashtra",
+    creator: "Drone Master",
+    href: "https://unsplash.com/photos/qrj4LiT9NRQ",
+  },
 ];
 
 export default function CreditsPage() {

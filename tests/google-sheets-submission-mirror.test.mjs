@@ -28,6 +28,8 @@ test("queues a versioned Sheet event without awaiting the webhook", async () => 
     submitterName: "Plant leader",
     submitterEmail: "leader@example.com",
     designation: "Plant Head",
+    useCaseTitle: "Predictive maintenance",
+    useCaseTheme: "Use case",
     useCases: ["Use case", "", "", ""],
     valueStreams: ["1"],
     expectedBenefits: "Benefit",
@@ -45,4 +47,3 @@ test("queues a versioned Sheet event without awaiting the webhook", async () => 
   assert.equal(body.event, "submission.created");
   await scheduled;
 });
-

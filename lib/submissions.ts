@@ -23,6 +23,9 @@ export interface Submission {
   submitterName: string;
   submitterEmail: string;
   designation: string;
+  useCaseTitle: string;
+  useCaseTheme: string;
+  /** Legacy projection retained for the direct Supabase adapter. */
   useCases: [string, string, string, string];
   valueStreams: ValueStream[];
   expectedBenefits: string;
@@ -39,7 +42,8 @@ interface CreateSubmissionInput {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: [string, string, string, string];
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: ValueStream[];
   expectedBenefits: string;
   action: "draft" | "submit";
@@ -50,7 +54,8 @@ interface UpdateSubmissionInput {
   submitterName?: string;
   submitterEmail?: string;
   designation?: string;
-  useCases?: [string, string, string, string];
+  useCaseTitle?: string;
+  useCaseTheme?: string;
   valueStreams?: ValueStream[];
   expectedBenefits?: string;
   status?: SubmissionStatus;
@@ -134,29 +139,6 @@ function parseStatus(value: unknown): SubmissionStatus {
   return value as SubmissionStatus;
 }
 
-function parseUseCases(
-  value: unknown,
-  fallback: [string, string, string, string] = ["", "", "", ""],
-): [string, string, string, string] {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (!Array.isArray(value) || value.length !== 4) {
-    throw new SubmissionError(
-      "useCases must contain exactly four fixed slots",
-      400,
-    );
-  }
-
-  return [
-    parseString(value[0], "useCases[0]", 2_000),
-    parseString(value[1], "useCases[1]", 2_000),
-    parseString(value[2], "useCases[2]", 2_000),
-    parseString(value[3], "useCases[3]", 2_000),
-  ];
-}
-
 function parseValueStreams(
   value: unknown,
   fallback: ValueStream[] = [],
@@ -195,7 +177,8 @@ function assertComplete(submission: {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: readonly string[];
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: readonly ValueStream[];
   expectedBenefits: string;
 }): void {
@@ -225,7 +208,8 @@ export function parseCreateSubmission(value: unknown): CreateSubmissionInput {
     submitterName: parseString(value.submitterName, "submitterName", 120),
     submitterEmail: parseString(value.submitterEmail, "submitterEmail", 254),
     designation: parseString(value.designation, "designation", 160),
-    useCases: parseUseCases(value.useCases),
+    useCaseTitle: parseString(value.useCaseTitle, "useCaseTitle", 200),
+    useCaseTheme: parseString(value.useCaseTheme, "useCaseTheme", 2_000),
     valueStreams: parseValueStreams(value.valueStreams),
     expectedBenefits: parseString(
       value.expectedBenefits,
@@ -252,7 +236,8 @@ export function parseUpdateSubmission(value: unknown): UpdateSubmissionInput {
     "submitterName",
     "submitterEmail",
     "designation",
-    "useCases",
+    "useCaseTitle",
+    "useCaseTheme",
     "valueStreams",
     "expectedBenefits",
     "status",
@@ -274,7 +259,12 @@ export function parseUpdateSubmission(value: unknown): UpdateSubmissionInput {
   if (hasOwn(value, "designation")) {
     input.designation = parseString(value.designation, "designation", 160);
   }
-  if (hasOwn(value, "useCases")) input.useCases = parseUseCases(value.useCases);
+  if (hasOwn(value, "useCaseTitle")) {
+    input.useCaseTitle = parseString(value.useCaseTitle, "useCaseTitle", 200);
+  }
+  if (hasOwn(value, "useCaseTheme")) {
+    input.useCaseTheme = parseString(value.useCaseTheme, "useCaseTheme", 2_000);
+  }
   if (hasOwn(value, "valueStreams")) {
     input.valueStreams = parseValueStreams(value.valueStreams);
   }
@@ -326,7 +316,9 @@ export async function createSubmission(
     submitterName: input.submitterName,
     submitterEmail: input.submitterEmail,
     designation: input.designation,
-    useCases: input.useCases,
+    useCaseTitle: input.useCaseTitle,
+    useCaseTheme: input.useCaseTheme,
+    useCases: [input.useCaseTheme, "", "", ""],
     valueStreams: input.valueStreams,
     expectedBenefits: input.expectedBenefits,
     status,
@@ -366,7 +358,9 @@ export async function updateSubmission(
   const next: Submission = {
     ...existing,
     ...input,
-    useCases: input.useCases ?? existing.useCases,
+    useCases: input.useCaseTheme === undefined
+      ? existing.useCases
+      : [input.useCaseTheme, "", "", ""],
     valueStreams: input.valueStreams ?? existing.valueStreams,
     updatedAt: now,
   };

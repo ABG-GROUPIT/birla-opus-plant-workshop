@@ -11,6 +11,9 @@ export interface StoredSubmission {
   submitterName: string;
   submitterEmail: string;
   designation: string;
+  useCaseTitle: string;
+  useCaseTheme: string;
+  /** Legacy storage projection retained for older server adapters. */
   useCases: [string, string, string, string];
   valueStreams: StoredValueStream[];
   expectedBenefits: string;

@@ -45,6 +45,7 @@ type Plant = {
   image: string;
   accent: string;
   number: string;
+  type: "Plant" | "Head Office";
 };
 
 type Submission = {
@@ -53,7 +54,8 @@ type Submission = {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: Array<{ id: string; description: string }>;
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: string[];
   expectedBenefits: string;
   status: Status;
@@ -82,8 +84,8 @@ type FormState = {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  selectedUseCase: string;
-  useCaseDescriptions: Record<string, string>;
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: string[];
   expectedBenefits: string;
   referenceLinks: ReferenceLinkDraft[];
@@ -94,8 +96,8 @@ type AdminEditState = {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  selectedUseCase: string;
-  useCaseDescription: string;
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStream: string;
   expectedBenefits: string;
 };
@@ -105,7 +107,8 @@ type SubmissionPatch = Partial<{
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: string[];
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: string[];
   expectedBenefits: string;
   status: Status;
@@ -127,6 +130,7 @@ const PLANTS: Plant[] = [
     number: "01",
     accent: "#F36A36",
     image: withBasePath("/plants/panipat.jpg"),
+    type: "Plant",
   },
   {
     id: "Ludhiana",
@@ -135,6 +139,7 @@ const PLANTS: Plant[] = [
     number: "02",
     accent: "#D12D73",
     image: withBasePath("/plants/ludhiana.jpg"),
+    type: "Plant",
   },
   {
     id: "Cheyyar",
@@ -143,6 +148,7 @@ const PLANTS: Plant[] = [
     number: "03",
     accent: "#DB5737",
     image: withBasePath("/plants/cheyyar.jpg"),
+    type: "Plant",
   },
   {
     id: "Chamarajanagar",
@@ -151,6 +157,7 @@ const PLANTS: Plant[] = [
     number: "04",
     accent: "#13969B",
     image: withBasePath("/plants/chamarajanagar.jpg"),
+    type: "Plant",
   },
   {
     id: "Mahad",
@@ -159,6 +166,7 @@ const PLANTS: Plant[] = [
     number: "05",
     accent: "#7152A3",
     image: withBasePath("/plants/mahad.jpg"),
+    type: "Plant",
   },
   {
     id: "Kharagpur",
@@ -167,10 +175,19 @@ const PLANTS: Plant[] = [
     number: "06",
     accent: "#EAA529",
     image: withBasePath("/plants/kharagpur.jpg"),
+    type: "Plant",
+  },
+  {
+    id: "Head Office (Mumbai)",
+    name: "Head Office (Mumbai)",
+    location: "Mumbai, Maharashtra",
+    number: "07",
+    accent: "#009C77",
+    image: withBasePath("/plants/head-office-mumbai.jpg"),
+    type: "Head Office",
   },
 ];
 
-const USE_CASES = ["Use Case 1", "Use Case 2", "Use Case 3", "Use Case 4"];
 const VALUE_STREAMS = [
   "Value Stream 1",
   "Value Stream 2",
@@ -204,15 +221,27 @@ const EMPTY_FORM: FormState = {
   submitterName: "",
   submitterEmail: "",
   designation: "",
-  selectedUseCase: "",
-  useCaseDescriptions: {},
+  useCaseTitle: "",
+  useCaseTheme: "",
   valueStreams: [],
   expectedBenefits: "",
   referenceLinks: [],
 };
 
-function normaliseSubmission(value: Partial<Submission>): Submission {
+function normaliseSubmission(
+  value: Partial<Submission> & {
+    useCases?: Array<string | { id?: string; description?: string }>;
+  },
+): Submission {
   const rawUseCases = Array.isArray(value.useCases) ? value.useCases : [];
+  const legacyUseCase = rawUseCases
+    .map((item, index) => typeof item === "string"
+      ? { id: `Use Case ${index + 1}`, description: item }
+      : {
+          id: String(item?.id ?? `Use Case ${index + 1}`),
+          description: String(item?.description ?? ""),
+        })
+    .find((item) => item.description.trim().length > 0);
   return {
     id: String(value.id ?? crypto.randomUUID()),
     referenceId: value.referenceId,
@@ -220,15 +249,8 @@ function normaliseSubmission(value: Partial<Submission>): Submission {
     submitterName: String(value.submitterName ?? "Workshop leader"),
     submitterEmail: String(value.submitterEmail ?? ""),
     designation: String(value.designation ?? ""),
-    useCases: rawUseCases.map((item, index) => {
-      if (typeof item === "string") {
-        return { id: USE_CASES[index] ?? `Use Case ${index + 1}`, description: item };
-      }
-      return {
-        id: String(item?.id ?? USE_CASES[index] ?? `Use Case ${index + 1}`),
-        description: String(item?.description ?? ""),
-      };
-    }).filter((item) => item.description.trim().length > 0),
+    useCaseTitle: String(value.useCaseTitle ?? legacyUseCase?.id ?? "Untitled use case"),
+    useCaseTheme: String(value.useCaseTheme ?? legacyUseCase?.description ?? ""),
     valueStreams: Array.isArray(value.valueStreams)
       ? value.valueStreams.map((item) => {
           const text = String(item);
@@ -355,21 +377,18 @@ function getPlant(id: string) {
   return PLANTS.find((plant) => plant.id === id) ?? PLANTS[0];
 }
 
-function chosenUseCase(submission: Submission | null) {
-  return submission?.useCases.find(
-    (item) => item.description.trim().length > 0,
-  ) ?? null;
+function normaliseUseCaseTitle(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-IN");
 }
 
 function adminEditState(submission: Submission): AdminEditState {
-  const useCase = chosenUseCase(submission);
   return {
     plant: submission.plant,
     submitterName: submission.submitterName,
     submitterEmail: submission.submitterEmail,
     designation: submission.designation,
-    selectedUseCase: useCase?.id ?? USE_CASES[0],
-    useCaseDescription: useCase?.description ?? "",
+    useCaseTitle: submission.useCaseTitle,
+    useCaseTheme: submission.useCaseTheme,
     valueStream: submission.valueStreams[0] ?? VALUE_STREAMS[0],
     expectedBenefits: submission.expectedBenefits,
   };
@@ -380,7 +399,8 @@ function hasLocalDraftContent(form: FormState) {
     form.submitterName.trim() ||
       form.submitterEmail.trim() ||
       form.designation.trim() ||
-      form.selectedUseCase ||
+      form.useCaseTitle.trim() ||
+      form.useCaseTheme.trim() ||
       form.valueStreams.length ||
       form.expectedBenefits.trim() ||
       form.referenceLinks.length,
@@ -393,10 +413,8 @@ function completion(form: FormState) {
     Boolean(form.submitterName.trim()),
     Boolean(form.submitterEmail.trim()),
     Boolean(form.designation.trim()),
-    Boolean(
-      form.selectedUseCase &&
-        form.useCaseDescriptions[form.selectedUseCase]?.trim(),
-    ),
+    Boolean(form.useCaseTitle.trim()),
+    Boolean(form.useCaseTheme.trim()),
     form.valueStreams.length === 1,
     Boolean(form.expectedBenefits.trim()),
   ];
@@ -410,6 +428,10 @@ export function WorkshopPresentation() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [activePlant, setActivePlant] = useState<string | null>(null);
   const [responseIndex, setResponseIndex] = useState(0);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [activePlant]);
 
   const loadSubmissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -574,7 +596,7 @@ export function AdminReview() {
 function SurfaceHeader({ context }: { context: string }) {
   return (
     <header className="site-header surface-header">
-      <BrandIdentity context="Plant Workshop Canvas" />
+      <BrandIdentity context="Leadership Workshop" />
       <div className="header-note">
         <span className="live-dot" />
         {context}
@@ -652,12 +674,24 @@ function PresentationView({
     return published
       .filter((item) => item.plant === activePlant)
       .sort((left, right) => {
-        const leftIndex = USE_CASES.indexOf(chosenUseCase(left)?.id ?? "");
-        const rightIndex = USE_CASES.indexOf(chosenUseCase(right)?.id ?? "");
-        if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+        const titleOrder = normaliseUseCaseTitle(left.useCaseTitle).localeCompare(
+          normaliseUseCaseTitle(right.useCaseTitle),
+          "en-IN",
+        );
+        if (titleOrder !== 0) return titleOrder;
         return left.createdAt.localeCompare(right.createdAt);
       });
   }, [activePlant, published]);
+
+  useEffect(() => {
+    if (plantResponses.length === 0) {
+      if (responseIndex !== 0) onResponseChange(0);
+      return;
+    }
+    if (responseIndex >= plantResponses.length) {
+      onResponseChange(plantResponses.length - 1);
+    }
+  }, [onResponseChange, plantResponses.length, responseIndex]);
 
   const moveResponse = useCallback(
     (direction: number) => {
@@ -711,16 +745,16 @@ function PresentationView({
     return (
       <section className="presentation-index">
         <div className="presentation-brandline">
-          <BrandIdentity context="Plant Leadership Workshop" presentation />
+          <BrandIdentity context="Leadership Workshop" presentation />
         </div>
         <div className="presentation-intro">
           <div>
-            <p className="eyebrow">Presentation mode · Six plants</p>
-            <h1>One workshop.<br />Six points of view.</h1>
+            <p className="eyebrow">Presentation mode · Six plants + Head Office</p>
+            <h1>One workshop.<br />Seven points of view.</h1>
           </div>
           <div className="intro-copy">
             <p>
-              Select a plant to open its approved workshop responses. Everything on
+              Select a plant or Head Office to open its approved workshop responses. Everything on
               this screen is ready for the room.
             </p>
             <div className="presentation-sync">
@@ -737,7 +771,7 @@ function PresentationView({
           </div>
         </div>
         {notice && <p className="quiet-notice">{notice}</p>}
-        <div className="plant-grid" aria-label="Select a plant">
+        <div className="plant-grid" aria-label="Select a plant or Head Office">
           {PLANTS.map((plant) => {
             const count = published.filter((item) => item.plant === plant.id).length;
             return (
@@ -766,8 +800,8 @@ function PresentationView({
           })}
         </div>
         <div className="presentation-footer">
-          <span>Birla Opus · Plant Leadership Workshop</span>
-          <span>Choose any plant to begin · <Link href="/credits">Photo credits</Link></span>
+          <span>Birla Opus · Leadership Workshop</span>
+          <span>Choose any location to begin · <Link href="/credits">Photo credits</Link></span>
         </div>
       </section>
     );
@@ -775,7 +809,22 @@ function PresentationView({
 
   const plant = getPlant(activePlant);
   const response = plantResponses[responseIndex] ?? null;
-  const activeUseCase = chosenUseCase(response);
+  const responseGroupKey = response
+    ? normaliseUseCaseTitle(response.useCaseTitle)
+    : "";
+  const useCaseGroups = Array.from(
+    new Set(plantResponses.map((item) => normaliseUseCaseTitle(item.useCaseTitle))),
+  );
+  const groupIndex = Math.max(0, useCaseGroups.indexOf(responseGroupKey));
+  const groupedResponses = responseGroupKey
+    ? plantResponses.filter(
+        (item) => normaliseUseCaseTitle(item.useCaseTitle) === responseGroupKey,
+      )
+    : [];
+  const leaderIndexInGroup = Math.max(
+    0,
+    groupedResponses.findIndex((item) => item.id === response?.id),
+  );
   const visibleReferences = response?.references.filter(
     (reference) => reference.isVisible && Boolean(reference.openUrl),
   ) ?? [];
@@ -789,21 +838,21 @@ function PresentationView({
         }}
       >
         <div className="hero-identity">
-          <BrandIdentity context="Plant Leadership Workshop" presentation />
-          <button className="back-link" type="button" onClick={onExit}>← All plants</button>
+          <BrandIdentity context="Leadership Workshop" presentation />
+          <button className="back-link" type="button" onClick={onExit}>← All locations</button>
         </div>
         <div className="plant-hero-copy">
-          <p className="eyebrow light">Plant {plant.number} · {plant.location}</p>
+          <p className="eyebrow light">{plant.type} {plant.number} · {plant.location}</p>
           <h1 className={plant.name.length > 10 ? "long-plant-name" : undefined}>{plant.name}</h1>
           <div className="response-meta">
             <span>
               {plantResponses.length
-                ? `Response ${String(responseIndex + 1).padStart(2, "0")} of ${String(plantResponses.length).padStart(2, "0")}`
+                ? `Use case group ${String(groupIndex + 1).padStart(2, "0")} of ${String(useCaseGroups.length).padStart(2, "0")} · Leader ${String(leaderIndexInGroup + 1).padStart(2, "0")} of ${String(groupedResponses.length).padStart(2, "0")}`
                 : "No response published"}
             </span>
             {response && (
               <span>
-                {activeUseCase?.id ?? "Use case"} · {response.submitterName}
+                {response.useCaseTitle || "Use case"} · {response.submitterName}
                 {response.designation ? `, ${response.designation}` : ""}
               </span>
             )}
@@ -835,23 +884,22 @@ function PresentationView({
           <>
             <aside className="response-facts">
               <article className="selected-use-case">
-                <p className="eyebrow">Chosen use case</p>
+                <p className="eyebrow">Use case</p>
                 <div className="selected-use-case-heading">
-                  <span>
-                    {String(
-                      Math.max(1, USE_CASES.indexOf(activeUseCase?.id ?? "") + 1),
-                    ).padStart(2, "0")}
-                  </span>
-                  <h2>{activeUseCase?.id ?? "Use case"}</h2>
+                  <span>Group {String(groupIndex + 1).padStart(2, "0")}</span>
+                  <h2>{response.useCaseTitle || "Use case"}</h2>
+                  <small className="use-case-group-badge">
+                    {groupedResponses.length} {groupedResponses.length === 1 ? "leader" : "leaders"} in this group
+                  </small>
                 </div>
                 <p
                   className="selected-use-case-description"
                   data-presentation-scroll
                   tabIndex={0}
                   role="region"
-                  aria-label="Use case description"
+                  aria-label="Use case theme"
                 >
-                  {activeUseCase?.description ?? "No use-case description supplied."}
+                  {response.useCaseTheme || "No use-case theme supplied."}
                 </p>
               </article>
 
@@ -915,8 +963,8 @@ function PresentationView({
             <span>Pending</span>
             <h2>Responses are being prepared.</h2>
             <p>
-              Once an administrator approves and includes a response, its use cases,
-              value streams and expected benefits will appear here.
+              Once an administrator approves and includes a response, its use case,
+              value stream and expected benefits will appear here.
             </p>
           </div>
         )}
@@ -926,7 +974,7 @@ function PresentationView({
         <button type="button" onClick={() => moveResponse(-1)} disabled={plantResponses.length < 2}>← Previous response</button>
         <span className="response-position" aria-label="Response position">
           {plantResponses.length
-            ? `${String(responseIndex + 1).padStart(2, "0")} / ${String(plantResponses.length).padStart(2, "0")}`
+            ? `Group ${String(groupIndex + 1).padStart(2, "0")}/${String(useCaseGroups.length).padStart(2, "0")} · Leader ${String(leaderIndexInGroup + 1).padStart(2, "0")}/${String(groupedResponses.length).padStart(2, "0")}`
             : "00 / 00"}
         </span>
         <button type="button" onClick={() => moveResponse(1)} disabled={plantResponses.length < 2}>Next response →</button>
@@ -1035,14 +1083,11 @@ function SubmissionView({
       try {
         const stored = window.localStorage.getItem(LOCAL_DRAFT_KEY);
         if (stored) {
-          const draft = JSON.parse(stored) as Partial<FormState>;
-          const selectedUseCase = USE_CASES.includes(draft.selectedUseCase ?? "")
-            ? draft.selectedUseCase ?? ""
-            : "";
-          const descriptions =
-            draft.useCaseDescriptions && typeof draft.useCaseDescriptions === "object"
-              ? draft.useCaseDescriptions
-              : {};
+          const draft = JSON.parse(stored) as Partial<FormState> & {
+            selectedUseCase?: string;
+            useCaseDescriptions?: Record<string, string>;
+          };
+          const legacySelectedUseCase = String(draft.selectedUseCase ?? "");
           const referenceLinks = Array.isArray(draft.referenceLinks)
             ? draft.referenceLinks
                 .filter((item): item is ReferenceLinkDraft => Boolean(
@@ -1062,8 +1107,12 @@ function SubmissionView({
             submitterName: String(draft.submitterName ?? ""),
             submitterEmail: String(draft.submitterEmail ?? ""),
             designation: String(draft.designation ?? ""),
-            selectedUseCase,
-            useCaseDescriptions: descriptions,
+            useCaseTitle: String(draft.useCaseTitle ?? legacySelectedUseCase),
+            useCaseTheme: String(
+              draft.useCaseTheme ??
+              draft.useCaseDescriptions?.[legacySelectedUseCase] ??
+              "",
+            ),
             valueStreams: Array.isArray(draft.valueStreams)
               ? draft.valueStreams.filter((stream) => VALUE_STREAMS.includes(stream)).slice(0, 1)
               : [],
@@ -1151,11 +1200,8 @@ function SubmissionView({
     if (!form.submitterName.trim()) next.push("Add the leader’s name.");
     if (!/^\S+@\S+\.\S+$/.test(form.submitterEmail)) next.push("Add a valid email address.");
     if (!form.designation.trim()) next.push("Add the leader's designation or role.");
-    if (!form.selectedUseCase) {
-      next.push("Choose one use case.");
-    } else if (!form.useCaseDescriptions[form.selectedUseCase]?.trim()) {
-      next.push("Add a short description for the chosen use case.");
-    }
+    if (!form.useCaseTitle.trim()) next.push("Add the use case title.");
+    if (!form.useCaseTheme.trim()) next.push("Define the use case theme.");
     if (form.valueStreams.length !== 1) next.push("Select one value stream.");
     if (!form.expectedBenefits.trim()) next.push("Describe the expected benefits.");
     next.push(
@@ -1219,11 +1265,8 @@ function SubmissionView({
         submitterName: form.submitterName,
         submitterEmail: form.submitterEmail,
         designation: form.designation,
-        useCases: USE_CASES.map((id) =>
-          id === form.selectedUseCase
-            ? form.useCaseDescriptions[id]?.trim() ?? ""
-            : "",
-        ) as [string, string, string, string],
+        useCaseTitle: form.useCaseTitle.trim(),
+        useCaseTheme: form.useCaseTheme.trim(),
         valueStreams: [
           String(VALUE_STREAMS.indexOf(form.valueStreams[0]) + 1) as BrowserValueStream,
         ],
@@ -1274,10 +1317,10 @@ function SubmissionView({
       <div className="form-intro">
         <div>
           <p className="eyebrow">Leader response form</p>
-          <h1>Bring your plant’s idea into the room.</h1>
+          <h1>Bring one clear use case into the room.</h1>
         </div>
         <p>
-          Capture the idea once. The workshop team can verify it, prepare it and
+          Capture one use case per form. The workshop team can verify it, prepare it and
           place it into the presentation without retyping a word.
         </p>
       </div>
@@ -1327,7 +1370,7 @@ function SubmissionView({
           )}
 
           <fieldset className="form-section">
-            <legend><span>01</span><div>Plant Name<small>Select the plant this response belongs to.</small></div></legend>
+            <legend><span>01</span><div>Plant / Office<small>Select the location this response belongs to.</small></div></legend>
             <div className="plant-options">
               {PLANTS.map((plant) => (
                 <label className={form.plant === plant.id ? "selected" : ""} key={plant.id}>
@@ -1386,48 +1429,38 @@ function SubmissionView({
           </fieldset>
 
           <fieldset className="form-section">
-            <legend><span>03</span><div>Use Case<small>Choose one fixed use case and add a short description.</small></div></legend>
-            <div className="choice-stack">
-              {USE_CASES.map((useCase, index) => {
-                const selected = form.selectedUseCase === useCase;
-                return (
-                  <div className={`expand-choice ${selected ? "selected" : ""}`} key={useCase}>
-                    <label className="choice-heading">
-                      <input
-                        type="radio"
-                        name="useCase"
-                        checked={selected}
-                        onChange={() =>
-                          setForm((current) => ({
-                            ...current,
-                            selectedUseCase: useCase,
-                          }))
-                        }
-                      />
-                      <span className="check-box">{selected ? "✓" : ""}</span>
-                      <span className="choice-index">0{index + 1}</span>
-                      <strong>{useCase}</strong>
-                      <small>{selected ? "Selected" : "Choose"}</small>
-                    </label>
-                    {selected && (
-                      <label className="description-field">
-                        <span>Description for {useCase}</span>
-                        <textarea
-                          value={form.useCaseDescriptions[useCase] ?? ""}
-                          onChange={(event) => setForm((current) => ({
-                            ...current,
-                            useCaseDescriptions: { ...current.useCaseDescriptions, [useCase]: event.target.value },
-                          }))}
-                          placeholder="Describe the opportunity, intervention or idea in a few clear sentences…"
-                          maxLength={300}
-                          rows={3}
-                        />
-                        <small>{form.useCaseDescriptions[useCase]?.length ?? 0}/300</small>
-                      </label>
-                    )}
-                  </div>
-                );
-              })}
+            <legend><span>03</span><div>Use Case<small>Write one use case and define its theme.</small></div></legend>
+            <div className="single-use-case-fields">
+              <label className="use-case-title-field">
+                <span>Use case title</span>
+                <input
+                  value={form.useCaseTitle}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    useCaseTitle: event.target.value,
+                  }))}
+                  placeholder="Give the use case a short, clear name"
+                  maxLength={200}
+                />
+                <small>{form.useCaseTitle.length}/200</small>
+              </label>
+              <p className="single-idea-note">
+                If several leaders contribute to the same use case, use the same shared title so their responses stay together in the presentation. Submit a new form for every additional use case.
+              </p>
+              <label className="description-field use-case-theme-field">
+                <span>Theme / definition</span>
+                <textarea
+                  value={form.useCaseTheme}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    useCaseTheme: event.target.value,
+                  }))}
+                  placeholder="Define the theme, opportunity or intervention in a few clear sentences…"
+                  maxLength={2000}
+                  rows={5}
+                />
+                <small>{form.useCaseTheme.length}/2000</small>
+              </label>
             </div>
           </fieldset>
 
@@ -1460,10 +1493,10 @@ function SubmissionView({
                 value={form.expectedBenefits}
                 onChange={(event) => setForm((current) => ({ ...current, expectedBenefits: event.target.value }))}
                 placeholder="What becomes better if this idea succeeds? Consider quality, speed, cost, safety, reliability or customer value…"
-                maxLength={1200}
+                maxLength={4000}
                 rows={8}
               />
-              <small>{form.expectedBenefits.length}/1200</small>
+              <small>{form.expectedBenefits.length}/4000</small>
             </label>
           </fieldset>
 
@@ -1764,19 +1797,28 @@ function ReviewView({
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<AdminEditState | null>(null);
 
-  const filtered = submissions.filter((item) => {
-    if (filter === "all") return true;
-    return item.status === filter;
-  });
+  const filtered = [...submissions]
+    .filter((item) => {
+      if (filter === "all") return true;
+      return item.status === filter;
+    })
+    .sort((left, right) => {
+      const entityOrder = PLANTS.findIndex((plant) => plant.id === left.plant) -
+        PLANTS.findIndex((plant) => plant.id === right.plant);
+      if (entityOrder !== 0) return entityOrder;
+      const titleOrder = normaliseUseCaseTitle(left.useCaseTitle).localeCompare(
+        normaliseUseCaseTitle(right.useCaseTitle),
+        "en-IN",
+      );
+      if (titleOrder !== 0) return titleOrder;
+      return left.createdAt.localeCompare(right.createdAt);
+    });
   const selected = submissions.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
 
   const update = async (changes: SubmissionPatch, message: string) => {
     if (!selected || !capability) return;
     setIsUpdating(true);
     try {
-      const useCases = (changes.useCases ?? USE_CASES.map((id) =>
-        selected.useCases.find((item) => item.id === id)?.description ?? "",
-      )) as [string, string, string, string];
       const selectedStreams = changes.valueStreams ?? selected.valueStreams;
       const stream = selectedStreams[0] ?? "";
       const valueStream = (/^[1-4]$/.test(stream)
@@ -1790,7 +1832,8 @@ function ReviewView({
         submitterName: changes.submitterName ?? selected.submitterName,
         submitterEmail: changes.submitterEmail ?? selected.submitterEmail,
         designation: changes.designation ?? selected.designation,
-        useCases,
+        useCaseTitle: changes.useCaseTitle ?? selected.useCaseTitle,
+        useCaseTheme: changes.useCaseTheme ?? selected.useCaseTheme,
         valueStreams: [valueStream],
         expectedBenefits: changes.expectedBenefits ?? selected.expectedBenefits,
         status: changes.status ?? selected.status,
@@ -1815,11 +1858,8 @@ function ReviewView({
         submitterName: editForm.submitterName,
         submitterEmail: editForm.submitterEmail,
         designation: editForm.designation,
-        useCases: USE_CASES.map((useCase) =>
-          useCase === editForm.selectedUseCase
-            ? editForm.useCaseDescription.trim()
-            : "",
-        ),
+        useCaseTitle: editForm.useCaseTitle.trim(),
+        useCaseTheme: editForm.useCaseTheme.trim(),
         valueStreams:
           valueStreamIndex >= 0 ? [String(valueStreamIndex + 1)] : [],
         expectedBenefits: editForm.expectedBenefits,
@@ -1868,13 +1908,18 @@ function ReviewView({
 
       <div className="review-layout">
         <div className="review-queue">
-          <div className="queue-heading"><span>{filtered.length} responses</span><button type="button">Newest first ↓</button></div>
+          <div className="queue-heading"><span>{filtered.length} responses</span><small>Entity · use case order</small></div>
           {isLoading ? (
             <div className="queue-empty">Loading responses…</div>
           ) : filtered.length === 0 ? (
             <div className="queue-empty"><span>✓</span><strong>This queue is clear.</strong><small>Responses will appear here when their status changes.</small></div>
           ) : filtered.map((item) => {
             const plant = getPlant(item.plant);
+            const groupSize = filtered.filter(
+              (candidate) => candidate.plant === item.plant &&
+                normaliseUseCaseTitle(candidate.useCaseTitle) ===
+                  normaliseUseCaseTitle(item.useCaseTitle),
+            ).length;
             return (
               <button className={`queue-item ${selected?.id === item.id ? "active" : ""}`} key={item.id} type="button" onClick={() => {
                 setSelectedId(item.id);
@@ -1885,7 +1930,7 @@ function ReviewView({
                 <span className="queue-content">
                   <span><strong>{plant.name}</strong><small>{formatDate(item.updatedAt)}</small></span>
                   <b>{item.submitterName || "Unnamed leader"}</b>
-                  <span className="queue-meta"><i className={`status-${item.status}`} />{statusLabel(item.status)} · {chosenUseCase(item)?.id ?? "No use case"}</span>
+                  <span className="queue-meta"><i className={`status-${item.status}`} />{statusLabel(item.status)} · {item.useCaseTitle || "No use case"} · {groupSize} {groupSize === 1 ? "leader" : "leaders"}</span>
                 </span>
                 <span className="queue-arrow">→</span>
               </button>
@@ -1967,13 +2012,13 @@ function ReviewView({
                     <legend><span>02</span><div>Use case and value stream<small>Exactly one of each is required.</small></div></legend>
                     <div className="two-fields">
                       <label>
-                        <span>Use case</span>
-                        <select
-                          value={editForm.selectedUseCase}
-                          onChange={(event) => setEditForm((current) => current ? ({ ...current, selectedUseCase: event.target.value }) : current)}
-                        >
-                          {USE_CASES.map((useCase) => <option key={useCase} value={useCase}>{useCase}</option>)}
-                        </select>
+                        <span>Use case title</span>
+                        <input
+                          value={editForm.useCaseTitle}
+                          onChange={(event) => setEditForm((current) => current ? ({ ...current, useCaseTitle: event.target.value }) : current)}
+                          maxLength={200}
+                          required
+                        />
                       </label>
                       <label>
                         <span>Value stream</span>
@@ -1986,11 +2031,12 @@ function ReviewView({
                       </label>
                     </div>
                     <label className="description-field">
-                      <span>Use-case description</span>
+                      <span>Theme / definition</span>
                       <textarea
-                        value={editForm.useCaseDescription}
-                        onChange={(event) => setEditForm((current) => current ? ({ ...current, useCaseDescription: event.target.value }) : current)}
+                        value={editForm.useCaseTheme}
+                        onChange={(event) => setEditForm((current) => current ? ({ ...current, useCaseTheme: event.target.value }) : current)}
                         rows={4}
+                        maxLength={2000}
                         required
                       />
                     </label>
@@ -2003,6 +2049,7 @@ function ReviewView({
                         value={editForm.expectedBenefits}
                         onChange={(event) => setEditForm((current) => current ? ({ ...current, expectedBenefits: event.target.value }) : current)}
                         rows={8}
+                        maxLength={4000}
                         required
                       />
                     </label>
@@ -2019,9 +2066,10 @@ function ReviewView({
               <div className="detail-section">
                 <div className="detail-label"><span>01</span><strong>Use Case</strong></div>
                 <div className="detail-use-cases">
-                  {selected.useCases.map((item, index) => (
-                    <article key={`${item.id}-${index}`}><span>0{index + 1}</span><div><strong>{item.id}</strong><p>{item.description}</p></div></article>
-                  ))}
+                  <article>
+                    <span>01</span>
+                    <div><strong>{selected.useCaseTitle || "Untitled use case"}</strong><p>{selected.useCaseTheme || "No theme supplied."}</p></div>
+                  </article>
                 </div>
               </div>
 

@@ -66,6 +66,9 @@ export interface BrowserSubmission {
   submitterName: string;
   submitterEmail: string;
   designation: string;
+  useCaseTitle: string;
+  useCaseTheme: string;
+  /** Legacy four-slot shape retained while older published clients drain. */
   useCases: [string, string, string, string];
   valueStreams: BrowserValueStream[];
   expectedBenefits: string;
@@ -84,6 +87,9 @@ export type PublicBrowserSubmission = Pick<
   | "id"
   | "plant"
   | "submitterName"
+  | "createdAt"
+  | "useCaseTitle"
+  | "useCaseTheme"
   | "useCases"
   | "valueStreams"
   | "expectedBenefits"
@@ -97,7 +103,8 @@ export interface SubmitWorkshopResponseInput {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: readonly [string, string, string, string];
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: readonly BrowserValueStream[];
   expectedBenefits: string;
   references?: readonly ReferenceManifestInput[];
@@ -122,7 +129,8 @@ export interface AdminSubmissionUpdateInput {
   submitterName: string;
   submitterEmail: string;
   designation: string;
-  useCases: readonly [string, string, string, string];
+  useCaseTitle: string;
+  useCaseTheme: string;
   valueStreams: readonly BrowserValueStream[];
   expectedBenefits: string;
   status: SubmissionStatus;
@@ -204,6 +212,19 @@ function storageUploadEndpoint(url: string): string {
     return `${parsed.protocol}//${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
   }
   return `${url.replace(/\/+$/, "")}/storage/v1/upload/resumable`;
+}
+
+function requiredSingleValueStream(
+  valueStreams: readonly BrowserValueStream[],
+): BrowserValueStream {
+  if (valueStreams.length !== 1) {
+    throw new BrowserSubmissionApiError(
+      "Choose exactly one value stream.",
+      null,
+      "invalid_value_stream",
+    );
+  }
+  return valueStreams[0];
 }
 
 /** Browser-safe TUS request settings for one capability-scoped upload slot. */
@@ -309,6 +330,10 @@ function normaliseReferenceMedia(
 
 function withNormalisedReferences<T>(row: T): T {
   if (!isRecord(row)) return row;
+  const legacyUseCases = Array.isArray(row.useCases)
+    ? row.useCases.map((value) => errorText(value) ?? "").slice(0, 4)
+    : [];
+  const legacyIndex = legacyUseCases.findIndex(Boolean);
   const references = Array.isArray(row.references)
     ? row.references
         .map((reference, index) => normaliseReferenceMedia(reference, index))
@@ -316,7 +341,16 @@ function withNormalisedReferences<T>(row: T): T {
         .sort((left, right) => left.sortOrder - right.sortOrder)
     : [];
 
-  return { ...row, references } as T;
+  return {
+    ...row,
+    useCaseTitle:
+      errorText(row.useCaseTitle) ??
+      (legacyIndex >= 0 ? `Use Case ${legacyIndex + 1}` : ""),
+    useCaseTheme:
+      errorText(row.useCaseTheme) ??
+      (legacyIndex >= 0 ? legacyUseCases[legacyIndex] : ""),
+    references,
+  } as T;
 }
 
 function referenceUploadSession(payload: unknown): ReferenceUploadSession {
@@ -648,14 +682,16 @@ export async function uploadReferenceFile(
 export async function submitWorkshopResponse(
   input: SubmitWorkshopResponseInput,
 ): Promise<{ submission: SubmittedWorkshopResponse }> {
+  const valueStream = requiredSingleValueStream(input.valueStreams);
   return {
-    submission: submittedResponse(await callRpc("workshop_submit_with_references", {
+    submission: submittedResponse(await callRpc("workshop_submit_single_use_case_with_references", {
       p_plant: input.plant,
       p_submitter_name: input.submitterName,
       p_submitter_email: input.submitterEmail,
       p_designation: input.designation,
-      p_use_cases: input.useCases,
-      p_value_stream: input.valueStreams[0] ?? null,
+      p_use_case_title: input.useCaseTitle,
+      p_use_case_theme: input.useCaseTheme,
+      p_value_stream: valueStream,
       p_expected_benefits: input.expectedBenefits,
       p_media_session_id: input.mediaSession?.sessionId ?? null,
       p_media_upload_token: input.mediaSession?.uploadToken ?? null,
@@ -676,8 +712,9 @@ export async function updateAdminSubmission(
   capability: string,
   input: AdminSubmissionUpdateInput,
 ): Promise<{ submission: BrowserSubmission }> {
+  const valueStream = requiredSingleValueStream(input.valueStreams);
   return {
-    submission: updatedSubmission(await callRpc("workshop_admin_update", {
+    submission: updatedSubmission(await callRpc("workshop_admin_single_use_case_update", {
       p_capability: capability,
       p_id: input.id,
       p_expected_updated_at: input.expectedUpdatedAt,
@@ -685,8 +722,9 @@ export async function updateAdminSubmission(
       p_submitter_name: input.submitterName,
       p_submitter_email: input.submitterEmail,
       p_designation: input.designation,
-      p_use_cases: input.useCases,
-      p_value_stream: input.valueStreams[0] ?? null,
+      p_use_case_title: input.useCaseTitle,
+      p_use_case_theme: input.useCaseTheme,
+      p_value_stream: valueStream,
       p_expected_benefits: input.expectedBenefits,
       p_status: input.status,
     })),

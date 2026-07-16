@@ -410,7 +410,7 @@ a:focus-visible,
 .plant-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0 auto;
   max-width: 1520px;
 }
@@ -509,6 +509,7 @@ a:focus-visible,
 .plant-title {
   bottom: clamp(20px, 2.5vw, 38px);
   left: clamp(18px, 2.3vw, 34px);
+  right: clamp(76px, 6vw, 94px);
 }
 
 .plant-title strong,
@@ -953,6 +954,18 @@ a:focus-visible,
   letter-spacing: -0.045em;
   line-height: 1.05;
   margin: 0;
+}
+
+.use-case-group-badge {
+  background: color-mix(in srgb, var(--plant-accent) 10%, white);
+  border-left: 2px solid var(--plant-accent);
+  color: var(--muted);
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  margin-top: 14px;
+  padding: 7px 9px;
 }
 
 .selected-use-case-description {
@@ -1766,6 +1779,66 @@ a:focus-visible,
   color: var(--muted);
 }
 
+.single-use-case-fields {
+  background: #f6fbf7;
+  border: 1px solid var(--line);
+}
+
+.use-case-title-field {
+  display: block;
+  padding: 20px;
+  position: relative;
+}
+
+.use-case-title-field > span {
+  display: block;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.use-case-title-field input {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  font-size: 16px;
+  height: 58px;
+  outline: none;
+  padding: 0 68px 0 17px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+  width: 100%;
+}
+
+.use-case-title-field input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(0, 156, 119, 0.1);
+}
+
+.use-case-title-field > small {
+  bottom: 43px;
+  color: #a097a3;
+  font-size: 9px;
+  position: absolute;
+  right: 35px;
+}
+
+.single-idea-note {
+  background: var(--green-soft);
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  color: var(--green-deep);
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 0;
+  padding: 13px 20px;
+}
+
+.use-case-theme-field {
+  border-top: 0;
+}
+
 .choice-stack {
   display: grid;
   gap: 10px;
@@ -2298,6 +2371,13 @@ a:focus-visible,
   font-size: 9px;
 }
 
+.queue-heading small {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .queue-item {
   align-items: stretch;
   background: transparent;
@@ -2359,6 +2439,8 @@ a:focus-visible,
   color: var(--muted);
   display: flex;
   font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
   text-transform: capitalize;
 }
 
@@ -2367,6 +2449,7 @@ a:focus-visible,
   border-radius: 50%;
   height: 6px;
   margin-right: 7px;
+  flex: 0 0 auto;
   width: 6px;
 }
 
@@ -2513,6 +2596,10 @@ a:focus-visible,
   gap: 14px;
   min-height: 112px;
   padding: 17px;
+}
+
+.detail-use-cases article:only-child {
+  grid-column: 1 / -1;
 }
 
 .detail-use-cases article > span {
@@ -3078,7 +3165,16 @@ a:focus-visible,
 
   .response-navigation {
     gap: 12px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 0 16px;
+  }
+
+  .response-position {
+    font-size: 8px;
+    letter-spacing: 0.06em;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
 
   .response-navigation > button {
@@ -3086,7 +3182,7 @@ a:focus-visible,
   }
 
   .response-navigation > button:first-child::after {
-    content: "← Previous";
+    content: "← Prev";
     font-size: 10px;
   }
 

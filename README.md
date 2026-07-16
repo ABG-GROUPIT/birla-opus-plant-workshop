@@ -1,7 +1,8 @@
-# Birla Opus Plant Workshop Canvas
+# Birla Opus Leadership Workshop Canvas
 
-A six-plant workshop website for collecting leader responses, reviewing them,
-and presenting only approved ideas. It is exported as a static Next.js site for
+A workshop website for six manufacturing plants and Head Office (Mumbai). It
+collects one use case per leader response, supports admin review, and presents
+only approved ideas. It is exported as a static Next.js site exclusively for
 GitHub Pages, while Supabase/Postgres remains the authoritative data store.
 
 ## Live routes
@@ -26,12 +27,12 @@ PostgREST endpoint:
 
 - `workshop_public_list` returns only approved, visible presentation fields.
 - `workshop_media_session_create` creates a one-hour, single-use upload session.
-- `workshop_submit_with_references` atomically creates a hidden response and
-  attaches its validated links/files. The original `workshop_submit` remains for
-  compatibility with older open form tabs.
+- `workshop_submit_single_use_case_with_references` atomically creates a hidden
+  one-use-case response and attaches its validated links/files. The original
+  submit RPCs remain for compatibility with older open form tabs.
 - `workshop_admin_list` returns review data after validating the admin capability.
-- `workshop_admin_update` applies edits and status changes after validating the
-  capability and the row's expected update timestamp.
+- `workshop_admin_single_use_case_update` applies edits and status changes after
+  validating the capability and the row's expected update timestamp.
 - `workshop_admin_reference_update` lets an administrator rename, correct, or
   hide one supporting reference.
 
@@ -74,9 +75,12 @@ must be reattached after the tab is closed.
 
 ## Submission contract
 
-- `useCases` is a four-string tuple representing Use Cases 1-4.
-- A submitted or approved response has a description in exactly one slot.
+- Every response contains one freehand `useCaseTitle` and one freehand
+  `useCaseTheme`. A leader submits another form for every additional use case.
 - `valueStreams` contains exactly one fixed value (`"1"` through `"4"`).
+- `expectedBenefits` is freehand presentation copy.
+- Within each plant or Head Office, responses are ordered by a normalized use
+  case title so leaders contributing to the same shared title stay together.
 - New form submissions enter review as `submitted` and are not visible.
 - Only approved, visible responses appear in the presentation.
 - Reference media is optional: at most four items, including at most three files
@@ -109,9 +113,4 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 The workflow has defaults for the repository base path and canonical Pages URL.
 They can be overridden with `NEXT_PUBLIC_BASE_PATH` and `NEXT_PUBLIC_SITE_URL`.
 Do not add the raw admin capability or a Supabase secret/service-role key to the
-workflow.
-
-A Vercel or custom-domain build can use the same two browser-safe Supabase
-variables. Leave `NEXT_PUBLIC_BASE_PATH` empty and set `NEXT_PUBLIC_SITE_URL` to
-that deployment's public origin. No Next.js `/api/submissions` server routes are
-required by this architecture.
+workflow. GitHub Pages is the only deployment target for this workshop build.

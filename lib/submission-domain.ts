@@ -5,6 +5,7 @@ export const PLANT_NAMES = [
   "Chamarajanagar",
   "Mahad",
   "Kharagpur",
+  "Head Office (Mumbai)",
 ] as const;
 
 export const SUBMISSION_STATUSES = [

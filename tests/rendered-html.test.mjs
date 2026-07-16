@@ -8,8 +8,11 @@ test("contains the compact Birla Opus presentation experience", async () => {
     "utf8",
   );
   assert.match(canvas, /One workshop/);
-  assert.match(canvas, /Six points of view/);
-  assert.match(canvas, /Chosen use case/);
+  assert.match(canvas, /Seven points of view/);
+  assert.match(canvas, /Use case title/);
+  assert.match(canvas, /Theme \/ definition/);
+  assert.match(canvas, /Submit a new form for every additional use case/);
+  assert.match(canvas, /Use case group/);
   assert.match(canvas, /Selected value stream/);
   assert.match(canvas, /Primary workshop outcome/);
   assert.match(canvas, /Designation \/ role/);
@@ -43,6 +46,7 @@ test("contains the compact Birla Opus presentation experience", async () => {
   ]) {
     assert.match(canvas, new RegExp(plant));
   }
+  assert.match(canvas, /Head Office \(Mumbai\)/);
   assert.doesNotMatch(canvas, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
@@ -61,7 +65,7 @@ test("separates presentation, leader submission, and admin review routes", async
   assert.doesNotMatch(submitPage, /AdminReview|WorkshopPresentation/);
   assert.match(adminPage, /AdminReview/);
   assert.doesNotMatch(adminPage, /LeaderSubmission|WorkshopPresentation/);
-  assert.match(layout, /Birla Opus Plant Workshop Canvas/);
+  assert.match(layout, /Birla Opus Leadership Workshop Canvas/);
   assert.match(layout, /og\.png/);
   const packageConfig = JSON.parse(packageJson);
   assert.equal(packageConfig.scripts.dev, "next dev");

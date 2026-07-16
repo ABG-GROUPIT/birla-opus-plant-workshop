@@ -14,10 +14,10 @@ call only these PostgREST RPC functions:
 | --- | --- | --- |
 | `workshop_public_list()` | Load the presentation | Returns only approved and visible rows, excluding email and designation |
 | `workshop_media_session_create()` | Prepare optional file uploads | Returns a random one-hour capability while storing only its SHA-256 digest |
-| `workshop_submit_with_references(...)` | Submit a response and its references | Validates the response, links, actual Storage objects, count and byte limits in one transaction |
-| `workshop_submit(...)` | Compatibility submission path | Keeps already-open older form tabs working without reference media |
+| `workshop_submit_single_use_case_with_references(...)` | Submit one use case and its references | Validates the title, theme, one value stream, benefits, links, actual Storage objects, count and byte limits in one transaction |
+| `workshop_submit_with_references(...)` / `workshop_submit(...)` | Compatibility submission paths | Keep already-open older form tabs working during the contract transition |
 | `workshop_admin_list(p_capability)` | Load the review queue | Validates the admin capability before returning full review data |
-| `workshop_admin_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency |
+| `workshop_admin_single_use_case_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency |
 | `workshop_admin_reference_update(...)` | Review one reference | Lets an administrator correct its title/link or exclude it from the presentation |
 
 The tables do not grant direct access to `anon` or `authenticated`. The RPCs are
@@ -43,6 +43,7 @@ workflow:
 1. [`202607160001_workshop_submissions.sql`](../supabase/migrations/202607160001_workshop_submissions.sql)
 2. [`202607160002_static_browser_rpc.sql`](../supabase/migrations/202607160002_static_browser_rpc.sql)
 3. [`202607160003_reference_media.sql`](../supabase/migrations/202607160003_reference_media.sql)
+4. [`202607160004_single_use_case_head_office.sql`](../supabase/migrations/202607160004_single_use_case_head_office.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
@@ -51,13 +52,16 @@ original public RPC entry points, grants only the required RPC execution, and
 keeps the underlying tables closed to browser roles. The third migration adds
 the `workshop-references` Storage bucket, short-lived upload sessions, reference
 metadata, restricted anonymous uploads, admin reference controls, and reference
-fields in the public/admin response envelopes.
+fields in the public/admin response envelopes. The fourth migration adds the
+Head Office (Mumbai) entity, one freehand use-case title and theme, single-use-
+case browser/admin RPCs, legacy synchronization, and plant/use-case ordering for
+the presentation.
 
 The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying all three migrations, confirm that:
+After applying all four migrations, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
 - the intended `public.workshop_*` RPC functions exist;
@@ -159,7 +163,7 @@ Use an identifiable test response, then remove or reject it after testing:
    the submitted queue and both references can be opened.
 4. Edit the wording, hide/show one reference, save it, and approve the response.
 5. Open the presentation and confirm that the approved response appears under
-   the correct plant and **Open references** exposes only included items.
+   the correct plant or Head Office and **Open references** exposes only included items.
 6. Reject the response and confirm that it no longer appears in the
    presentation.
 7. Redeploy the static site and confirm that the Supabase response still exists.
@@ -178,8 +182,8 @@ panel to verify the complete upload chain:
    service-role key.
 3. The create request returns `201`, subsequent TUS `PATCH` requests return
    `204`, and no request returns `401` or `403`.
-4. `POST /rest/v1/rpc/workshop_submit_with_references` succeeds, and the new
-   response and file appear in the admin review queue.
+4. `POST /rest/v1/rpc/workshop_submit_single_use_case_with_references` succeeds,
+   and the new response and file appear in the admin review queue.
 5. Approve the response and confirm the presentation opens the included file.
 
 Only the migration's capability-checked `INSERT` policy should exist for these
@@ -196,17 +200,6 @@ dashboard/API; do not delete rows directly from `storage.objects` with SQL.
 The presentation read is enforced inside `workshop_public_list`, not by a query
 parameter chosen by the browser. A row cannot reach the public presentation
 until the database reports it as both approved and visible.
-
-## Optional custom domain or Vercel deployment
-
-The same static/browser architecture also works behind a custom domain or on
-Vercel. Configure the same two public Supabase values, leave
-`NEXT_PUBLIC_BASE_PATH` empty, and set `NEXT_PUBLIC_SITE_URL` to the public
-origin. The deployment does not need a Supabase service key or
-`/api/submissions` routes.
-
-The GitHub Pages URL should remain available as the compatibility route for
-company devices that block the custom domain or `vercel.app`.
 
 ## Google Sheet mirror status
 

@@ -12,6 +12,8 @@ interface SupabaseSubmissionRow {
   submitter_name: string;
   submitter_email: string;
   designation: string;
+  use_case_title: string;
+  use_case_theme: string;
   use_case_1: string;
   use_case_2: string;
   use_case_3: string;
@@ -57,6 +59,8 @@ const SELECT_COLUMNS = [
   "submitter_name",
   "submitter_email",
   "designation",
+  "use_case_title",
+  "use_case_theme",
   "use_case_1",
   "use_case_2",
   "use_case_3",
@@ -93,6 +97,8 @@ function fromRow(row: SupabaseSubmissionRow): StoredSubmission {
     submitterName: row.submitter_name,
     submitterEmail: row.submitter_email,
     designation: row.designation,
+    useCaseTitle: row.use_case_title,
+    useCaseTheme: row.use_case_theme,
     useCases: [row.use_case_1, row.use_case_2, row.use_case_3, row.use_case_4],
     valueStreams: selectedValueStreams(row),
     expectedBenefits: row.expected_benefits,
@@ -113,6 +119,8 @@ function toRow(submission: StoredSubmission): SupabaseSubmissionRow {
     submitter_name: submission.submitterName,
     submitter_email: submission.submitterEmail,
     designation: submission.designation,
+    use_case_title: submission.useCaseTitle,
+    use_case_theme: submission.useCaseTheme,
     use_case_1: submission.useCases[0],
     use_case_2: submission.useCases[1],
     use_case_3: submission.useCases[2],

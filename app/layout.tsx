@@ -20,9 +20,9 @@ const siteUrl = new URL(
 );
 const imageUrl = new URL("og.png", siteUrl).toString();
 const markUrl = new URL("brand/birla-opus-mark.png", siteUrl).toString();
-const title = "Birla Opus Plant Workshop Canvas";
+const title = "Birla Opus Leadership Workshop Canvas";
 const description =
-  "Collect, verify and present workshop responses from six Birla Opus plants.";
+  "Collect, verify and present workshop responses from six Birla Opus plants and Head Office (Mumbai).";
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
@@ -40,9 +40,9 @@ export const metadata: Metadata = {
     images: [
       {
         url: imageUrl,
-        width: 1729,
-        height: 908,
-        alt: "Birla Opus Plant Workshop Canvas — Six plants. One shared view.",
+        width: 1728,
+        height: 900,
+        alt: "Birla Opus Leadership Workshop Canvas — Six plants and Head Office. One shared view.",
       },
     ],
   },

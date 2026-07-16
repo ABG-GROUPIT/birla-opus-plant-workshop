@@ -50,6 +50,9 @@ const publicSubmission = {
   id: "f0f2bb80-074e-43a9-afaf-f01cf1c7e500",
   plant: "Panipat",
   submitterName: "Plant leader",
+  createdAt: "2026-07-16T10:00:00.000Z",
+  useCaseTitle: "Predictive maintenance",
+  useCaseTheme: "Short use case",
   useCases: ["", "Short use case", "", ""],
   valueStreams: ["3"],
   expectedBenefits: "Faster planning.",
@@ -125,7 +128,7 @@ test("reads presentation rows through the public RPC with only the publishable k
   assert.equal(headers.get("authorization"), null);
 });
 
-test("submits one fixed use case and value stream through the references-aware RPC", async (t) => {
+test("submits one named use case and value stream through the references-aware RPC", async (t) => {
   const requests = captureFetch(t, {
     submission: {
       id: publicSubmission.id,
@@ -139,7 +142,8 @@ test("submits one fixed use case and value stream through the references-aware R
     submitterName: "Plant leader",
     submitterEmail: "leader@example.com",
     designation: "Plant Head",
-    useCases: ["", "Short use case", "", ""],
+    useCaseTitle: "Predictive maintenance",
+    useCaseTheme: "Short use case",
     valueStreams: ["3"],
     expectedBenefits: "Faster planning.",
   });
@@ -153,20 +157,44 @@ test("submits one fixed use case and value stream through the references-aware R
   });
   assert.equal(
     requests[0].input,
-    "https://example.supabase.co/rest/v1/rpc/workshop_submit_with_references",
+    "https://example.supabase.co/rest/v1/rpc/workshop_submit_single_use_case_with_references",
   );
   assert.deepEqual(JSON.parse(requests[0].init.body), {
     p_plant: "Panipat",
     p_submitter_name: "Plant leader",
     p_submitter_email: "leader@example.com",
     p_designation: "Plant Head",
-    p_use_cases: ["", "Short use case", "", ""],
+    p_use_case_title: "Predictive maintenance",
+    p_use_case_theme: "Short use case",
     p_value_stream: "3",
     p_expected_benefits: "Faster planning.",
     p_media_session_id: null,
     p_media_upload_token: null,
     p_references: [],
   });
+});
+
+test("rejects zero or multiple value streams before making a request", async (t) => {
+  const requests = captureFetch(t, {});
+  const baseInput = {
+    plant: "Panipat",
+    submitterName: "Plant leader",
+    submitterEmail: "leader@example.com",
+    designation: "Plant Head",
+    useCaseTitle: "Predictive maintenance",
+    useCaseTheme: "Short use case",
+    expectedBenefits: "Faster planning.",
+  };
+
+  for (const valueStreams of [[], ["1", "2"]]) {
+    await assert.rejects(
+      submitWorkshopResponse({ ...baseInput, valueStreams }),
+      (error) =>
+        error instanceof BrowserSubmissionApiError &&
+        error.code === "invalid_value_stream",
+    );
+  }
+  assert.equal(requests.length, 0);
 });
 
 test("creates and parses a media upload session", async (t) => {
@@ -236,7 +264,8 @@ test("submits link and uploaded-file manifests with the media capability", async
     submitterName: "Plant leader",
     submitterEmail: "leader@example.com",
     designation: "Plant Head",
-    useCases: ["", "Short use case", "", ""],
+    useCaseTitle: "Predictive maintenance",
+    useCaseTheme: "Short use case",
     valueStreams: ["3"],
     expectedBenefits: "Faster planning.",
     mediaSession: {
@@ -324,7 +353,8 @@ test("sends a complete optimistic admin update and unwraps the updated row", asy
       submitterName: "Plant leader",
       submitterEmail: "leader@example.com",
       designation: "Plant Head",
-      useCases: ["", "Short use case", "", ""],
+      useCaseTitle: "Predictive maintenance",
+      useCaseTheme: "Short use case",
       valueStreams: ["3"],
       expectedBenefits: "Faster planning.",
       status: "rejected",
@@ -334,7 +364,7 @@ test("sends a complete optimistic admin update and unwraps the updated row", asy
 
   assert.equal(
     requests[0].input,
-    "https://example.supabase.co/rest/v1/rpc/workshop_admin_update",
+    "https://example.supabase.co/rest/v1/rpc/workshop_admin_single_use_case_update",
   );
   assert.deepEqual(JSON.parse(requests[0].init.body), {
     p_capability: "unguessable-capability",
@@ -344,7 +374,8 @@ test("sends a complete optimistic admin update and unwraps the updated row", asy
     p_submitter_name: "Plant leader",
     p_submitter_email: "leader@example.com",
     p_designation: "Plant Head",
-    p_use_cases: ["", "Short use case", "", ""],
+    p_use_case_title: "Predictive maintenance",
+    p_use_case_theme: "Short use case",
     p_value_stream: "3",
     p_expected_benefits: "Faster planning.",
     p_status: "rejected",
