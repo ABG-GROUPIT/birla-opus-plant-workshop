@@ -407,12 +407,10 @@ function valueStreamIndex(value: string) {
   );
 }
 
-function valueStreamDisplay(value: string, includeNumber = true) {
+function valueStreamDisplay(value: string) {
   const index = valueStreamIndex(value);
   if (index < 0) return value;
-  return includeNumber
-    ? `${index + 1} · ${VALUE_STREAM_LABELS[index]}`
-    : VALUE_STREAM_LABELS[index];
+  return VALUE_STREAM_LABELS[index];
 }
 
 function valueStreamWireCode(value: string): BrowserValueStream | null {
@@ -1563,7 +1561,7 @@ function SubmissionView({
           <fieldset className="form-section">
             <legend><span>04</span><div>Value Stream<small>Select the one manufacturing aspect this response will help.</small></div></legend>
             <div className="stream-options">
-              {VALUE_STREAMS.map((stream, index) => {
+              {VALUE_STREAMS.map((stream) => {
                 const selected = form.valueStreams.includes(stream);
                 return (
                   <label className={selected ? "selected" : ""} key={stream}>
@@ -1573,8 +1571,7 @@ function SubmissionView({
                       checked={selected}
                       onChange={() => selectValueStream(stream)}
                     />
-                    <span>0{index + 1}</span>
-                    <strong>{valueStreamDisplay(stream, false)}</strong>
+                    <strong>{valueStreamDisplay(stream)}</strong>
                     <i>✓</i>
                   </label>
                 );

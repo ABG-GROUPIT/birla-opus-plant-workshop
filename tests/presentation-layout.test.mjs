@@ -41,6 +41,8 @@ test("renders eight named value streams while retaining numbered wire codes", as
   assert.match(canvas, /function valueStreamWireCode/);
   assert.match(canvas, /valueStreamIndex\(submission\.valueStreams\[0\] \?\? ""\)/);
   assert.doesNotMatch(canvas, /VALUE_STREAMS\.indexOf\(stream\) \+ 1/);
+  assert.doesNotMatch(canvas, /`\$\{index \+ 1\} · \$\{VALUE_STREAM_LABELS\[index\]\}`/);
+  assert.doesNotMatch(canvas, /<span>0\{index \+ 1\}<\/span>/);
 });
 
 test("provides independent readable regions for long workbook copy", async () => {
