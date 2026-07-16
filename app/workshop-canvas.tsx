@@ -422,6 +422,16 @@ function submitterDisplay(submission: Submission) {
   return submission.submitterName.trim() || "Workbook entry";
 }
 
+function presentationUseCaseDescription(value: string) {
+  const marker = "Original theme:";
+  if (!value.startsWith(marker)) return value;
+
+  const descriptionStart = value.indexOf("\n\n");
+  return descriptionStart >= 0
+    ? value.slice(descriptionStart + 2).trim()
+    : value.slice(marker.length).trim();
+}
+
 function adminEditState(submission: Submission): AdminEditState {
   const selectedStreamIndex = valueStreamIndex(submission.valueStreams[0] ?? "");
   return {
@@ -995,7 +1005,8 @@ function PresentationView({
                   className="selected-use-case-description"
                   label="Use case description"
                 >
-                  {response.useCaseTheme || "No use-case theme supplied."}
+                  {presentationUseCaseDescription(response.useCaseTheme) ||
+                    "No use-case description supplied."}
                 </PresentationScrollRegion>
               </article>
 

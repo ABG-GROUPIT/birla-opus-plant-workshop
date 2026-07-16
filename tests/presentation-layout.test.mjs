@@ -57,6 +57,8 @@ test("provides independent readable regions for long workbook copy", async () =>
   assert.match(canvas, /aria-label=\{label\}/);
   assert.match(canvas, /Workbook entry/);
   assert.match(canvas, /· Entry /);
+  assert.match(canvas, /function presentationUseCaseDescription/);
+  assert.match(canvas, /presentationUseCaseDescription\(response\.useCaseTheme\)/);
   assert.match(canvas, /response\.useCaseTitle\.length > 120 \? "long-copy"/);
 
   assert.match(css, /\.response-stage-compact\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 0\.82fr\) minmax\(0, 1\.18fr\)/);
