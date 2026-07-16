@@ -356,6 +356,46 @@ a:focus-visible,
   text-transform: uppercase;
 }
 
+.presentation-sync {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.presentation-sync button {
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(11, 95, 75, 0.22);
+  border-radius: 999px;
+  color: var(--green-deep);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 8px 12px;
+  text-transform: uppercase;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.presentation-sync button:hover {
+  background: white;
+  border-color: rgba(11, 95, 75, 0.48);
+}
+
+.presentation-sync button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.presentation-sync-time {
+  color: rgba(21, 58, 48, 0.52);
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  margin-top: 9px;
+  text-transform: uppercase;
+}
+
 .quiet-notice {
   background: rgba(255, 255, 255, 0.62);
   border: 1px solid var(--line);
@@ -731,6 +771,11 @@ a:focus-visible,
 
 .hero-controls button:hover {
   background: var(--plant-accent);
+}
+
+.hero-controls button:disabled {
+  cursor: wait;
+  opacity: 0.52;
 }
 
 .response-stage {

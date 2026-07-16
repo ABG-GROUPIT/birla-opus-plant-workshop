@@ -150,6 +150,24 @@ const VALUE_STREAMS = [
 
 const LOCAL_DRAFT_KEY = "birla-opus-leader-response-draft-v1";
 const ADMIN_CAPABILITY_KEY = "birla-opus-admin-capability-v1";
+const SUBMISSION_SYNC_KEY = "birla-opus-submissions-changed-v1";
+const SUBMISSION_SYNC_CHANNEL = "birla-opus-workshop-sync-v1";
+
+function announceSubmissionChange() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(SUBMISSION_SYNC_KEY, String(Date.now()));
+  } catch {
+    // BroadcastChannel still provides instant same-origin refresh when available.
+  }
+
+  if ("BroadcastChannel" in window) {
+    const channel = new BroadcastChannel(SUBMISSION_SYNC_CHANNEL);
+    channel.postMessage("submissions-changed");
+    channel.close();
+  }
+}
 
 const EMPTY_FORM: FormState = {
   plant: "Panipat",
@@ -232,6 +250,18 @@ function formatDateTime(value: string | null) {
   }
 }
 
+function formatSyncTime(value: string) {
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return "just now";
+  }
+}
+
 function statusLabel(status: Status) {
   if (status === "rejected") return "Needs changes";
   if (status === "submitted") return "Submitted";
@@ -294,6 +324,7 @@ export function WorkshopPresentation() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [activePlant, setActivePlant] = useState<string | null>(null);
   const [responseIndex, setResponseIndex] = useState(0);
 
@@ -302,10 +333,15 @@ export function WorkshopPresentation() {
     try {
       setSubmissions(apiRows(await listPresentationSubmissions()));
       setNotice("");
-    } catch {
-      if (!silent) {
-        setNotice("Responses will appear here once the data service is available.");
-      }
+      setLastUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      setNotice(
+        silent
+          ? "Live refresh is paused. Select Refresh now to reconnect."
+          : error instanceof Error
+            ? error.message
+            : "Responses will appear here once the data service is available.",
+      );
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -313,15 +349,32 @@ export function WorkshopPresentation() {
 
   useEffect(() => {
     const startup = window.setTimeout(() => void loadSubmissions(), 0);
-    const interval = window.setInterval(() => void loadSubmissions(true), 12_000);
-    const handleVisibility = () => {
+    const interval = window.setInterval(() => void loadSubmissions(true), 3_000);
+    const refreshWhenActive = () => {
       if (document.visibilityState === "visible") void loadSubmissions(true);
     };
-    document.addEventListener("visibilitychange", handleVisibility);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SUBMISSION_SYNC_KEY) void loadSubmissions(true);
+    };
+    const channel = "BroadcastChannel" in window
+      ? new BroadcastChannel(SUBMISSION_SYNC_CHANNEL)
+      : null;
+    channel?.addEventListener("message", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    window.addEventListener("focus", refreshWhenActive);
+    window.addEventListener("online", refreshWhenActive);
+    window.addEventListener("pageshow", refreshWhenActive);
+    window.addEventListener("storage", handleStorage);
     return () => {
       window.clearTimeout(startup);
       window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      channel?.removeEventListener("message", refreshWhenActive);
+      channel?.close();
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+      window.removeEventListener("focus", refreshWhenActive);
+      window.removeEventListener("online", refreshWhenActive);
+      window.removeEventListener("pageshow", refreshWhenActive);
+      window.removeEventListener("storage", handleStorage);
     };
   }, [loadSubmissions]);
 
@@ -331,6 +384,7 @@ export function WorkshopPresentation() {
         submissions={submissions}
         isLoading={isLoading}
         notice={notice}
+        lastUpdatedAt={lastUpdatedAt}
         activePlant={activePlant}
         responseIndex={responseIndex}
         onPlantChange={(plant) => {
@@ -338,6 +392,7 @@ export function WorkshopPresentation() {
           setResponseIndex(0);
         }}
         onResponseChange={setResponseIndex}
+        onRefresh={() => void loadSubmissions()}
         onExit={() => {
           setActivePlant(null);
           setResponseIndex(0);
@@ -474,19 +529,23 @@ function PresentationView({
   submissions,
   isLoading,
   notice,
+  lastUpdatedAt,
   activePlant,
   responseIndex,
   onPlantChange,
   onResponseChange,
+  onRefresh,
   onExit,
 }: {
   submissions: Submission[];
   isLoading: boolean;
   notice: string;
+  lastUpdatedAt: string | null;
   activePlant: string | null;
   responseIndex: number;
   onPlantChange: (plant: string) => void;
   onResponseChange: (index: number) => void;
+  onRefresh: () => void;
   onExit: () => void;
 }) {
   const published = useMemo(
@@ -573,7 +632,17 @@ function PresentationView({
               Select a plant to open its approved workshop responses. Everything on
               this screen is ready for the room.
             </p>
-            <span>{published.length} responses included</span>
+            <div className="presentation-sync">
+              <span>{published.length} responses included</span>
+              <button type="button" onClick={onRefresh} disabled={isLoading}>
+                {isLoading ? "Syncing…" : "Refresh now ↻"}
+              </button>
+            </div>
+            {lastUpdatedAt && (
+              <small className="presentation-sync-time">
+                Last checked {formatSyncTime(lastUpdatedAt)}
+              </small>
+            )}
           </div>
         </div>
         {notice && <p className="quiet-notice">{notice}</p>}
@@ -649,6 +718,14 @@ function PresentationView({
         <div className="hero-controls">
           <button type="button" onClick={() => movePlant(-1)} aria-label="Previous plant">↑</button>
           <button type="button" onClick={() => movePlant(1)} aria-label="Next plant">↓</button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            aria-label="Refresh responses"
+            disabled={isLoading}
+          >
+            ↻
+          </button>
           <button
             type="button"
             onClick={() => void document.documentElement.requestFullscreen?.()}
@@ -1146,6 +1223,7 @@ function ReviewView({
         expectedBenefits: changes.expectedBenefits ?? selected.expectedBenefits,
         status: changes.status ?? selected.status,
       });
+      announceSubmissionChange();
       setIsEditing(false);
       await onChanged(message);
     } catch {

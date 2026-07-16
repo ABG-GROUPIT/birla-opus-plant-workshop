@@ -18,6 +18,10 @@ test("contains the compact Birla Opus presentation experience", async () => {
   assert.match(canvas, /Edit response/);
   assert.match(canvas, /Approve response/);
   assert.match(canvas, /Reject response/);
+  assert.match(canvas, /Refresh now/);
+  assert.match(canvas, /3_000/);
+  assert.match(canvas, /BroadcastChannel/);
+  assert.match(canvas, /pageshow/);
   assert.match(canvas, /SubmissionView/);
   assert.match(canvas, /ReviewView/);
   assert.match(canvas, /PresentationView/);
