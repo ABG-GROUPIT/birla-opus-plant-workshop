@@ -1,6 +1,7 @@
 import type {
   PlantName,
   SubmissionStatus,
+  ValueStreamInput,
 } from "./submission-domain.ts";
 import {
   REFERENCE_LIMITS,
@@ -10,7 +11,8 @@ import {
 import type { ReferenceKind } from "./reference-media.ts";
 import { Upload } from "tus-js-client";
 
-export type BrowserValueStream = "1" | "2" | "3" | "4";
+/** Codes keep cached form tabs working; RPC responses use canonical names. */
+export type BrowserValueStream = ValueStreamInput;
 
 const REFERENCE_BUCKET = "workshop-references";
 const TUS_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
@@ -134,6 +136,55 @@ export interface AdminSubmissionUpdateInput {
   valueStreams: readonly BrowserValueStream[];
   expectedBenefits: string;
   status: SubmissionStatus;
+}
+
+export interface AdminExcelImportEntry {
+  sourceKey: string;
+  sourceSheet: string;
+  sourceRow: number;
+  sourceSerial: string;
+  plant: PlantName;
+  submitterName?: string;
+  submitterEmail?: string;
+  designation?: string;
+  useCaseTitle: string;
+  useCaseDescription: string;
+  valueStream: BrowserValueStream | null;
+  expectedBenefits: string;
+  sourcePayload?: Record<string, unknown>;
+}
+
+export interface AdminExcelImportResultItem {
+  sourceKey: string | null;
+  submissionId?: string;
+  existingSourceKey?: string;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
+  missingFields?: string[];
+  reason?: string;
+  published?: boolean;
+}
+
+export interface AdminExcelImportResult {
+  batchId: string;
+  workbookSha256: string;
+  payloadSha256: string;
+  fileName: string;
+  publishRequested: boolean;
+  replayed: boolean;
+  counts: {
+    entries: number;
+    inserted: number;
+    unchanged: number;
+    movedDuplicates: number;
+    conflicts: number;
+    incomplete: number;
+  };
+  inserted: AdminExcelImportResultItem[];
+  unchanged: AdminExcelImportResultItem[];
+  movedDuplicates: AdminExcelImportResultItem[];
+  conflicts: AdminExcelImportResultItem[];
+  incomplete: AdminExcelImportResultItem[];
 }
 
 interface PostgrestErrorPayload {
@@ -559,6 +610,17 @@ function updatedReference(payload: unknown): BrowserReferenceMedia {
   return reference;
 }
 
+function excelImportResult(payload: unknown): AdminExcelImportResult {
+  if (!isRecord(payload) || !isRecord(payload.counts)) {
+    throw new BrowserSubmissionApiError(
+      "The workshop data service did not return a valid import receipt.",
+      null,
+      "invalid_response",
+    );
+  }
+  return payload as unknown as AdminExcelImportResult;
+}
+
 export async function listPresentationSubmissions(): Promise<
   BrowserSubmissionList<PublicBrowserSubmission>
 > {
@@ -706,6 +768,22 @@ export async function listAdminSubmissions(
   return submissionList<BrowserSubmission>(
     await callRpc("workshop_admin_list", { p_capability: capability }),
   );
+}
+
+export async function importAdminWorkbookEntries(
+  capability: string,
+  workbookSha256: string,
+  fileName: string,
+  entries: readonly AdminExcelImportEntry[],
+  publish: boolean,
+): Promise<AdminExcelImportResult> {
+  return excelImportResult(await callRpc("workshop_admin_excel_batch_import", {
+    p_capability: capability,
+    p_workbook_sha256: workbookSha256,
+    p_file_name: fileName,
+    p_entries: entries,
+    p_publish: publish,
+  }));
 }
 
 export async function updateAdminSubmission(

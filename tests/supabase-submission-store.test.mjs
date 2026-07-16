@@ -12,7 +12,7 @@ const stored = {
   useCaseTitle: "Predictive maintenance",
   useCaseTheme: "Selected use case",
   useCases: ["Selected use case", "", "", ""],
-  valueStreams: ["3"],
+  valueStreams: ["Process Optimization"],
   expectedBenefits: "Faster planning with fewer manual handoffs.",
   status: "submitted",
   isVisible: false,
@@ -38,6 +38,7 @@ const row = {
   value_stream_2_selected: false,
   value_stream_3_selected: true,
   value_stream_4_selected: false,
+  value_stream_name: "Process Optimization",
   expected_benefits: stored.expectedBenefits,
   status: stored.status,
   is_visible: false,
@@ -72,6 +73,7 @@ test("creates a Supabase row without exposing a new secret key as Bearer auth", 
   assert.equal(body.use_case_title, "Predictive maintenance");
   assert.equal(body.use_case_theme, "Selected use case");
   assert.equal(body.value_stream_3_selected, true);
+  assert.equal(body.value_stream_name, "Process Optimization");
 });
 
 test("hard-filters the presentation query to approved and visible rows", async () => {

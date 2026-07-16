@@ -29,6 +29,7 @@ import {
 } from "@/lib/reference-media";
 import {
   FormEvent,
+  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -193,7 +194,22 @@ const VALUE_STREAMS = [
   "Value Stream 2",
   "Value Stream 3",
   "Value Stream 4",
+  "Value Stream 5",
+  "Value Stream 6",
+  "Value Stream 7",
+  "Value Stream 8",
 ];
+
+const VALUE_STREAM_LABELS = [
+  "Productivity",
+  "Quality",
+  "Process Optimization",
+  "Reliability",
+  "Energy Efficiency",
+  "Safety",
+  "Sustainability",
+  "Supply Chain",
+] as const;
 
 const LOCAL_DRAFT_KEY = "birla-opus-leader-response-draft-v1";
 const ADMIN_CAPABILITY_KEY = "birla-opus-admin-capability-v1";
@@ -246,7 +262,7 @@ function normaliseSubmission(
     id: String(value.id ?? crypto.randomUUID()),
     referenceId: value.referenceId,
     plant: String(value.plant ?? "Panipat"),
-    submitterName: String(value.submitterName ?? "Workshop leader"),
+    submitterName: String(value.submitterName ?? ""),
     submitterEmail: String(value.submitterEmail ?? ""),
     designation: String(value.designation ?? ""),
     useCaseTitle: String(value.useCaseTitle ?? legacyUseCase?.id ?? "Untitled use case"),
@@ -254,7 +270,7 @@ function normaliseSubmission(
     valueStreams: Array.isArray(value.valueStreams)
       ? value.valueStreams.map((item) => {
           const text = String(item);
-          return /^[1-4]$/.test(text) ? `Value Stream ${text}` : text;
+          return /^[1-8]$/.test(text) ? `Value Stream ${text}` : text;
         })
       : [],
     expectedBenefits: String(value.expectedBenefits ?? ""),
@@ -381,7 +397,35 @@ function normaliseUseCaseTitle(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-IN");
 }
 
+function valueStreamIndex(value: string) {
+  const canonicalIndex = VALUE_STREAMS.indexOf(value);
+  if (canonicalIndex >= 0) return canonicalIndex;
+  const numeric = value.trim().match(/^(?:Value Stream\s+)?([1-8])$/i);
+  if (numeric) return Number(numeric[1]) - 1;
+  return VALUE_STREAM_LABELS.findIndex(
+    (label) => label.toLocaleLowerCase("en-IN") === value.trim().toLocaleLowerCase("en-IN"),
+  );
+}
+
+function valueStreamDisplay(value: string, includeNumber = true) {
+  const index = valueStreamIndex(value);
+  if (index < 0) return value;
+  return includeNumber
+    ? `${index + 1} · ${VALUE_STREAM_LABELS[index]}`
+    : VALUE_STREAM_LABELS[index];
+}
+
+function valueStreamWireCode(value: string): BrowserValueStream | null {
+  const index = valueStreamIndex(value);
+  return index < 0 ? null : (String(index + 1) as BrowserValueStream);
+}
+
+function submitterDisplay(submission: Submission) {
+  return submission.submitterName.trim() || "Workbook entry";
+}
+
 function adminEditState(submission: Submission): AdminEditState {
+  const selectedStreamIndex = valueStreamIndex(submission.valueStreams[0] ?? "");
   return {
     plant: submission.plant,
     submitterName: submission.submitterName,
@@ -389,7 +433,8 @@ function adminEditState(submission: Submission): AdminEditState {
     designation: submission.designation,
     useCaseTitle: submission.useCaseTitle,
     useCaseTheme: submission.useCaseTheme,
-    valueStream: submission.valueStreams[0] ?? VALUE_STREAMS[0],
+    valueStream:
+      selectedStreamIndex >= 0 ? VALUE_STREAMS[selectedStreamIndex] : VALUE_STREAMS[0],
     expectedBenefits: submission.expectedBenefits,
   };
 }
@@ -421,25 +466,90 @@ function completion(form: FormState) {
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
+function PresentationScrollRegion({
+  responseKey,
+  className,
+  label,
+  children,
+}: {
+  responseKey: string;
+  className: string;
+  label: string;
+  children: ReactNode;
+}) {
+  const regionRef = useRef<HTMLDivElement>(null);
+  const [hasMore, setHasMore] = useState(false);
+
+  const updateOverflowCue = useCallback(() => {
+    const region = regionRef.current;
+    if (!region) return;
+    const overflows = region.scrollHeight > region.clientHeight + 2;
+    const atEnd = region.scrollTop + region.clientHeight >= region.scrollHeight - 2;
+    setHasMore(overflows && !atEnd);
+  }, []);
+
+  useEffect(() => {
+    const region = regionRef.current;
+    if (!region) return;
+    region.scrollTop = 0;
+    const frame = window.requestAnimationFrame(updateOverflowCue);
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateOverflowCue);
+    observer?.observe(region);
+    window.addEventListener("resize", updateOverflowCue);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", updateOverflowCue);
+    };
+  }, [responseKey, updateOverflowCue]);
+
+  return (
+    <div className="presentation-scroll-frame">
+      <div
+        className={className}
+        data-presentation-scroll
+        ref={regionRef}
+        tabIndex={0}
+        role="region"
+        aria-label={label}
+        onScroll={updateOverflowCue}
+      >
+        {children}
+      </div>
+      {hasMore && <span className="scroll-more-cue" aria-hidden="true">Scroll for more ↓</span>}
+    </div>
+  );
+}
+
 export function WorkshopPresentation() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [activePlant, setActivePlant] = useState<string | null>(null);
-  const [responseIndex, setResponseIndex] = useState(0);
+  const [selectedResponseId, setSelectedResponseId] = useState<string | null>(null);
+  const latestRequestRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [activePlant]);
 
   const loadSubmissions = useCallback(async (silent = false) => {
+    if (silent && refreshInFlightRef.current) return;
+    const requestId = ++latestRequestRef.current;
+    refreshInFlightRef.current = true;
     if (!silent) setIsLoading(true);
     try {
-      setSubmissions(apiRows(await listPresentationSubmissions()));
+      const nextSubmissions = apiRows(await listPresentationSubmissions());
+      if (requestId !== latestRequestRef.current) return;
+      setSubmissions(nextSubmissions);
       setNotice("");
       setLastUpdatedAt(new Date().toISOString());
     } catch (error) {
+      if (requestId !== latestRequestRef.current) return;
       setNotice(
         silent
           ? "Live refresh is paused. Select Refresh now to reconnect."
@@ -448,7 +558,10 @@ export function WorkshopPresentation() {
             : "Responses will appear here once the data service is available.",
       );
     } finally {
-      if (!silent) setIsLoading(false);
+      if (requestId === latestRequestRef.current) {
+        refreshInFlightRef.current = false;
+        if (!silent) setIsLoading(false);
+      }
     }
   }, []);
 
@@ -491,16 +604,16 @@ export function WorkshopPresentation() {
         notice={notice}
         lastUpdatedAt={lastUpdatedAt}
         activePlant={activePlant}
-        responseIndex={responseIndex}
+        selectedResponseId={selectedResponseId}
         onPlantChange={(plant) => {
           setActivePlant(plant);
-          setResponseIndex(0);
+          setSelectedResponseId(null);
         }}
-        onResponseChange={setResponseIndex}
+        onResponseChange={setSelectedResponseId}
         onRefresh={() => void loadSubmissions()}
         onExit={() => {
           setActivePlant(null);
-          setResponseIndex(0);
+          setSelectedResponseId(null);
         }}
       />
     </main>
@@ -636,7 +749,7 @@ function PresentationView({
   notice,
   lastUpdatedAt,
   activePlant,
-  responseIndex,
+  selectedResponseId,
   onPlantChange,
   onResponseChange,
   onRefresh,
@@ -647,13 +760,14 @@ function PresentationView({
   notice: string;
   lastUpdatedAt: string | null;
   activePlant: string | null;
-  responseIndex: number;
+  selectedResponseId: string | null;
   onPlantChange: (plant: string) => void;
-  onResponseChange: (index: number) => void;
+  onResponseChange: (responseId: string | null) => void;
   onRefresh: () => void;
   onExit: () => void;
 }) {
   const referenceDialogRef = useRef<HTMLDialogElement>(null);
+  const responseStageRef = useRef<HTMLDivElement>(null);
   const published = useMemo(
     () => submissions.filter((item) => item.status === "approved" && item.isVisible),
     [submissions],
@@ -679,28 +793,35 @@ function PresentationView({
           "en-IN",
         );
         if (titleOrder !== 0) return titleOrder;
-        return left.createdAt.localeCompare(right.createdAt);
+        const createdOrder = left.createdAt.localeCompare(right.createdAt);
+        return createdOrder !== 0 ? createdOrder : left.id.localeCompare(right.id);
       });
   }, [activePlant, published]);
 
+  const selectedIndex = selectedResponseId
+    ? plantResponses.findIndex((item) => item.id === selectedResponseId)
+    : -1;
+  const responseIndex = selectedIndex >= 0 ? selectedIndex : 0;
+  const response = plantResponses[responseIndex] ?? null;
+
   useEffect(() => {
-    if (plantResponses.length === 0) {
-      if (responseIndex !== 0) onResponseChange(0);
-      return;
-    }
-    if (responseIndex >= plantResponses.length) {
-      onResponseChange(plantResponses.length - 1);
-    }
-  }, [onResponseChange, plantResponses.length, responseIndex]);
+    const nextResponseId = response?.id ?? null;
+    if (selectedResponseId !== nextResponseId) onResponseChange(nextResponseId);
+  }, [onResponseChange, response?.id, selectedResponseId]);
 
   const moveResponse = useCallback(
     (direction: number) => {
       if (!plantResponses.length) return;
-      onResponseChange(
-        (responseIndex + direction + plantResponses.length) % plantResponses.length,
-      );
+      const nextIndex =
+        (responseIndex + direction + plantResponses.length) % plantResponses.length;
+      onResponseChange(plantResponses[nextIndex].id);
+      window.requestAnimationFrame(() => {
+        if (window.matchMedia("(max-width: 760px)").matches) {
+          responseStageRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+        }
+      });
     },
-    [onResponseChange, plantResponses.length, responseIndex],
+    [onResponseChange, plantResponses, responseIndex],
   );
 
   useEffect(() => {
@@ -808,7 +929,6 @@ function PresentationView({
   }
 
   const plant = getPlant(activePlant);
-  const response = plantResponses[responseIndex] ?? null;
   const responseGroupKey = response
     ? normaliseUseCaseTitle(response.useCaseTitle)
     : "";
@@ -821,7 +941,7 @@ function PresentationView({
         (item) => normaliseUseCaseTitle(item.useCaseTitle) === responseGroupKey,
       )
     : [];
-  const leaderIndexInGroup = Math.max(
+  const entryIndexInGroup = Math.max(
     0,
     groupedResponses.findIndex((item) => item.id === response?.id),
   );
@@ -847,12 +967,12 @@ function PresentationView({
           <div className="response-meta">
             <span>
               {plantResponses.length
-                ? `Use case group ${String(groupIndex + 1).padStart(2, "0")} of ${String(useCaseGroups.length).padStart(2, "0")} · Leader ${String(leaderIndexInGroup + 1).padStart(2, "0")} of ${String(groupedResponses.length).padStart(2, "0")}`
+                ? `Use case group ${String(groupIndex + 1).padStart(2, "0")} of ${String(useCaseGroups.length).padStart(2, "0")} · Entry ${String(entryIndexInGroup + 1).padStart(2, "0")} of ${String(groupedResponses.length).padStart(2, "0")}`
                 : "No response published"}
             </span>
             {response && (
               <span>
-                {response.useCaseTitle || "Use case"} · {response.submitterName}
+                {response.useCaseTitle || "Use case"} · {submitterDisplay(response)}
                 {response.designation ? `, ${response.designation}` : ""}
               </span>
             )}
@@ -879,7 +999,7 @@ function PresentationView({
         </div>
       </div>
 
-      <div className="response-stage response-stage-compact">
+      <div className="response-stage response-stage-compact" ref={responseStageRef}>
         {response ? (
           <>
             <aside className="response-facts">
@@ -887,27 +1007,27 @@ function PresentationView({
                 <p className="eyebrow">Use case</p>
                 <div className="selected-use-case-heading">
                   <span>Group {String(groupIndex + 1).padStart(2, "0")}</span>
-                  <h2>{response.useCaseTitle || "Use case"}</h2>
+                  <h2 className={response.useCaseTitle.length > 120 ? "long-copy" : undefined}>
+                    {response.useCaseTitle || "Use case"}
+                  </h2>
                   <small className="use-case-group-badge">
-                    {groupedResponses.length} {groupedResponses.length === 1 ? "leader" : "leaders"} in this group
+                    {groupedResponses.length} {groupedResponses.length === 1 ? "entry" : "entries"} in this group
                   </small>
                 </div>
-                <p
+                <PresentationScrollRegion
+                  responseKey={response.id}
                   className="selected-use-case-description"
-                  data-presentation-scroll
-                  tabIndex={0}
-                  role="region"
-                  aria-label="Use case theme"
+                  label="Use case description"
                 >
                   {response.useCaseTheme || "No use-case theme supplied."}
-                </p>
+                </PresentationScrollRegion>
               </article>
 
               <div className="value-stream-summary">
                 <p className="eyebrow">Selected value stream</p>
                 <div className="stream-sentence">
                   {response.valueStreams.map((stream) => (
-                    <span key={stream}>{stream}</span>
+                    <span key={stream}>{valueStreamDisplay(stream)}</span>
                   ))}
                 </div>
               </div>
@@ -921,12 +1041,10 @@ function PresentationView({
                 </div>
                 <span>03</span>
               </div>
-              <div
+              <PresentationScrollRegion
+                responseKey={response.id}
                 className="expected-benefits-copy"
-                data-presentation-scroll
-                tabIndex={0}
-                role="region"
-                aria-label="Expected benefits"
+                label="Expected benefits"
               >
                 <span className="benefit-mark" aria-hidden="true">＋</span>
                 <blockquote
@@ -942,7 +1060,7 @@ function PresentationView({
                 >
                   {response.expectedBenefits}
                 </blockquote>
-              </div>
+              </PresentationScrollRegion>
               <div className="expected-benefits-footer">
                 <span>{getPlant(response.plant).name}</span>
                 <span>Verified response</span>
@@ -974,7 +1092,7 @@ function PresentationView({
         <button type="button" onClick={() => moveResponse(-1)} disabled={plantResponses.length < 2}>← Previous response</button>
         <span className="response-position" aria-label="Response position">
           {plantResponses.length
-            ? `Group ${String(groupIndex + 1).padStart(2, "0")}/${String(useCaseGroups.length).padStart(2, "0")} · Leader ${String(leaderIndexInGroup + 1).padStart(2, "0")}/${String(groupedResponses.length).padStart(2, "0")}`
+            ? `Group ${String(groupIndex + 1).padStart(2, "0")}/${String(useCaseGroups.length).padStart(2, "0")} · Entry ${String(entryIndexInGroup + 1).padStart(2, "0")}/${String(groupedResponses.length).padStart(2, "0")}`
             : "00 / 00"}
         </span>
         <button type="button" onClick={() => moveResponse(1)} disabled={plantResponses.length < 2}>Next response →</button>
@@ -1478,7 +1596,7 @@ function SubmissionView({
                       onChange={() => selectValueStream(stream)}
                     />
                     <span>0{index + 1}</span>
-                    <strong>{stream}</strong>
+                    <strong>{valueStreamDisplay(stream, false)}</strong>
                     <i>✓</i>
                   </label>
                 );
@@ -1821,9 +1939,8 @@ function ReviewView({
     try {
       const selectedStreams = changes.valueStreams ?? selected.valueStreams;
       const stream = selectedStreams[0] ?? "";
-      const valueStream = (/^[1-4]$/.test(stream)
-        ? stream
-        : String(VALUE_STREAMS.indexOf(stream) + 1)) as BrowserValueStream;
+      const valueStream = valueStreamWireCode(stream);
+      if (!valueStream) throw new Error("Choose one recognised value stream.");
 
       await updateAdminSubmission(capability, {
         id: selected.id,
@@ -1851,7 +1968,7 @@ function ReviewView({
   const saveEdits = async (event: FormEvent) => {
     event.preventDefault();
     if (!selected || !editForm) return;
-    const valueStreamIndex = VALUE_STREAMS.indexOf(editForm.valueStream);
+    const valueStream = valueStreamWireCode(editForm.valueStream);
     await update(
       {
         plant: editForm.plant,
@@ -1860,8 +1977,7 @@ function ReviewView({
         designation: editForm.designation,
         useCaseTitle: editForm.useCaseTitle.trim(),
         useCaseTheme: editForm.useCaseTheme.trim(),
-        valueStreams:
-          valueStreamIndex >= 0 ? [String(valueStreamIndex + 1)] : [],
+        valueStreams: valueStream ? [valueStream] : [],
         expectedBenefits: editForm.expectedBenefits,
       },
       "Response details updated.",
@@ -1929,8 +2045,8 @@ function ReviewView({
                 <span className="queue-accent" style={{ background: plant.accent }} />
                 <span className="queue-content">
                   <span><strong>{plant.name}</strong><small>{formatDate(item.updatedAt)}</small></span>
-                  <b>{item.submitterName || "Unnamed leader"}</b>
-                  <span className="queue-meta"><i className={`status-${item.status}`} />{statusLabel(item.status)} · {item.useCaseTitle || "No use case"} · {groupSize} {groupSize === 1 ? "leader" : "leaders"}</span>
+                  <b>{item.submitterName || "Workbook entry"}</b>
+                  <span className="queue-meta"><i className={`status-${item.status}`} />{statusLabel(item.status)} · {item.useCaseTitle || "No use case"} · {groupSize} {groupSize === 1 ? "entry" : "entries"}</span>
                 </span>
                 <span className="queue-arrow">→</span>
               </button>
@@ -2026,7 +2142,9 @@ function ReviewView({
                           value={editForm.valueStream}
                           onChange={(event) => setEditForm((current) => current ? ({ ...current, valueStream: event.target.value }) : current)}
                         >
-                          {VALUE_STREAMS.map((stream) => <option key={stream} value={stream}>{stream}</option>)}
+                          {VALUE_STREAMS.map((stream) => (
+                            <option key={stream} value={stream}>{valueStreamDisplay(stream)}</option>
+                          ))}
                         </select>
                       </label>
                     </div>
@@ -2076,7 +2194,7 @@ function ReviewView({
               <div className="detail-section detail-columns">
                 <div>
                   <div className="detail-label"><span>02</span><strong>Value Stream</strong></div>
-                  <div className="detail-streams">{selected.valueStreams.map((stream) => <span key={stream}>{stream}</span>)}</div>
+                  <div className="detail-streams">{selected.valueStreams.map((stream) => <span key={stream}>{valueStreamDisplay(stream)}</span>)}</div>
                 </div>
                 <div>
                   <div className="detail-label"><span>03</span><strong>Expected Benefits</strong></div>

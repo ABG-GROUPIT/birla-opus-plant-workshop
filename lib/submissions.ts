@@ -1,8 +1,12 @@
 import {
   PLANT_NAMES,
   SUBMISSION_STATUSES,
+  VALUE_STREAM_CODES,
+  VALUE_STREAM_NAMES,
+  canonicalValueStream,
   type PlantName,
   type SubmissionStatus,
+  type ValueStreamName,
 } from "@/lib/submission-domain";
 import {
   getSubmissionCompletionErrors,
@@ -13,9 +17,9 @@ import {
   queueConfiguredSubmissionMirror,
 } from "@/lib/configured-submission-backends";
 
-export const VALUE_STREAMS = ["1", "2", "3", "4"] as const;
+export const VALUE_STREAMS = VALUE_STREAM_NAMES;
 
-export type ValueStream = (typeof VALUE_STREAMS)[number];
+export type ValueStream = ValueStreamName;
 
 export interface Submission {
   id: string;
@@ -71,7 +75,6 @@ export interface SubmissionFilters {
 
 const PLANT_SET = new Set<string>(PLANT_NAMES);
 const STATUS_SET = new Set<string>(SUBMISSION_STATUSES);
-const VALUE_STREAM_SET = new Set<string>(VALUE_STREAMS);
 
 export class SubmissionError extends Error {
   constructor(
@@ -153,13 +156,16 @@ function parseValueStreams(
 
   const uniqueValues = new Set<ValueStream>();
   for (const item of value) {
-    if (typeof item !== "string" || !VALUE_STREAM_SET.has(item)) {
+    const canonical = typeof item === "string"
+      ? canonicalValueStream(item)
+      : null;
+    if (!canonical) {
       throw new SubmissionError(
-        `valueStreams may only contain: ${VALUE_STREAMS.join(", ")}`,
+        `valueStreams may only contain codes ${VALUE_STREAM_CODES.join(", ")} or the named value streams`,
         400,
       );
     }
-    uniqueValues.add(item as ValueStream);
+    uniqueValues.add(canonical);
   }
 
   return VALUE_STREAMS.filter((item) => uniqueValues.has(item));
@@ -209,12 +215,12 @@ export function parseCreateSubmission(value: unknown): CreateSubmissionInput {
     submitterEmail: parseString(value.submitterEmail, "submitterEmail", 254),
     designation: parseString(value.designation, "designation", 160),
     useCaseTitle: parseString(value.useCaseTitle, "useCaseTitle", 200),
-    useCaseTheme: parseString(value.useCaseTheme, "useCaseTheme", 2_000),
+    useCaseTheme: parseString(value.useCaseTheme, "useCaseTheme", 12_000),
     valueStreams: parseValueStreams(value.valueStreams),
     expectedBenefits: parseString(
       value.expectedBenefits,
       "expectedBenefits",
-      4_000,
+      12_000,
     ),
     action,
   };
@@ -263,7 +269,7 @@ export function parseUpdateSubmission(value: unknown): UpdateSubmissionInput {
     input.useCaseTitle = parseString(value.useCaseTitle, "useCaseTitle", 200);
   }
   if (hasOwn(value, "useCaseTheme")) {
-    input.useCaseTheme = parseString(value.useCaseTheme, "useCaseTheme", 2_000);
+    input.useCaseTheme = parseString(value.useCaseTheme, "useCaseTheme", 12_000);
   }
   if (hasOwn(value, "valueStreams")) {
     input.valueStreams = parseValueStreams(value.valueStreams);
@@ -272,7 +278,7 @@ export function parseUpdateSubmission(value: unknown): UpdateSubmissionInput {
     input.expectedBenefits = parseString(
       value.expectedBenefits,
       "expectedBenefits",
-      4_000,
+      12_000,
     );
   }
   if (hasOwn(value, "status")) input.status = parseStatus(value.status);

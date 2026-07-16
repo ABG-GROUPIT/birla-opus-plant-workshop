@@ -1,8 +1,13 @@
-import type { PlantName, SubmissionStatus } from "./submission-domain.ts";
+import {
+  VALUE_STREAM_NAMES,
+  type PlantName,
+  type SubmissionStatus,
+  type ValueStreamName,
+} from "./submission-domain.ts";
 
-export const STORED_VALUE_STREAMS = ["1", "2", "3", "4"] as const;
+export const STORED_VALUE_STREAMS = VALUE_STREAM_NAMES;
 
-export type StoredValueStream = (typeof STORED_VALUE_STREAMS)[number];
+export type StoredValueStream = ValueStreamName;
 
 /** Provider-neutral record used by the server-side Supabase adapter. */
 export interface StoredSubmission {

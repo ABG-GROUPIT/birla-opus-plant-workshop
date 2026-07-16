@@ -5,6 +5,7 @@ import type {
   SubmissionStoreFilters,
 } from "./submission-store-contract.ts";
 import type { SupabaseSubmissionConfig } from "./submission-backend-config.ts";
+import { VALUE_STREAM_NAMES } from "./submission-domain.ts";
 
 interface SupabaseSubmissionRow {
   id: string;
@@ -22,6 +23,7 @@ interface SupabaseSubmissionRow {
   value_stream_2_selected: boolean;
   value_stream_3_selected: boolean;
   value_stream_4_selected: boolean;
+  value_stream_name: string;
   expected_benefits: string;
   status: StoredSubmission["status"];
   is_visible: boolean;
@@ -69,6 +71,7 @@ const SELECT_COLUMNS = [
   "value_stream_2_selected",
   "value_stream_3_selected",
   "value_stream_4_selected",
+  "value_stream_name",
   "expected_benefits",
   "status",
   "is_visible",
@@ -79,13 +82,16 @@ const SELECT_COLUMNS = [
 ].join(",");
 
 function selectedValueStreams(row: SupabaseSubmissionRow): StoredValueStream[] {
+  if (VALUE_STREAM_NAMES.includes(row.value_stream_name as StoredValueStream)) {
+    return [row.value_stream_name as StoredValueStream];
+  }
   const flags = [
     row.value_stream_1_selected,
     row.value_stream_2_selected,
     row.value_stream_3_selected,
     row.value_stream_4_selected,
   ];
-  return (["1", "2", "3", "4"] as const).filter(
+  return VALUE_STREAM_NAMES.slice(0, 4).filter(
     (_, index) => flags[index],
   );
 }
@@ -113,6 +119,7 @@ function fromRow(row: SupabaseSubmissionRow): StoredSubmission {
 
 function toRow(submission: StoredSubmission): SupabaseSubmissionRow {
   const selected = new Set(submission.valueStreams);
+  const valueStreamName = submission.valueStreams[0] ?? "";
   return {
     id: submission.id,
     plant: submission.plant,
@@ -125,10 +132,11 @@ function toRow(submission: StoredSubmission): SupabaseSubmissionRow {
     use_case_2: submission.useCases[1],
     use_case_3: submission.useCases[2],
     use_case_4: submission.useCases[3],
-    value_stream_1_selected: selected.has("1"),
-    value_stream_2_selected: selected.has("2"),
-    value_stream_3_selected: selected.has("3"),
-    value_stream_4_selected: selected.has("4"),
+    value_stream_1_selected: selected.has("Productivity"),
+    value_stream_2_selected: selected.has("Quality"),
+    value_stream_3_selected: selected.has("Process Optimization"),
+    value_stream_4_selected: selected.has("Reliability"),
+    value_stream_name: valueStreamName,
     expected_benefits: submission.expectedBenefits,
     status: submission.status,
     is_visible: submission.isVisible,
