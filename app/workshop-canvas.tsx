@@ -871,7 +871,7 @@ function PresentationView({
         <div className="presentation-intro">
           <div>
             <p className="eyebrow">Presentation mode · Six plants + Head Office</p>
-            <h1>One workshop.<br />Seven points of view.</h1>
+            <h1>Industrial AI<br />Exploration Workshop</h1>
           </div>
           <div className="intro-copy">
             <p>
