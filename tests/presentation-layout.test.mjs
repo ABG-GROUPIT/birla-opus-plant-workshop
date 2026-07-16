@@ -51,7 +51,7 @@ test("provides independent readable regions for long workbook copy", async () =>
 
   assert.match(canvas, /function PresentationScrollRegion/);
   assert.match(canvas, /responseKey=\{response\.id\}/);
-  assert.match(canvas, /Scroll for more ↓/);
+  assert.doesNotMatch(canvas, /Scroll for more/);
   assert.match(canvas, /aria-label=\{label\}/);
   assert.match(canvas, /Workbook entry/);
   assert.match(canvas, /· Entry /);
@@ -60,7 +60,7 @@ test("provides independent readable regions for long workbook copy", async () =>
   assert.match(css, /\.response-stage-compact\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 0\.82fr\) minmax\(0, 1\.18fr\)/);
   assert.match(css, /\.selected-use-case-description\s*\{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*pre-wrap;/);
   assert.match(css, /\.expected-benefits-copy\s*\{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*pre-wrap;/);
-  assert.match(css, /\.scroll-more-cue\s*\{/);
+  assert.doesNotMatch(css, /\.scroll-more-cue\s*\{/);
   assert.match(css, /\.selected-use-case-heading h2\.long-copy\s*\{/);
   assert.match(css, /minmax\(160px, min\(38vh, 280px\)\)/);
   assert.match(css, /max-height:\s*52vh;/);

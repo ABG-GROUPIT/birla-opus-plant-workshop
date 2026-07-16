@@ -478,32 +478,12 @@ function PresentationScrollRegion({
   children: ReactNode;
 }) {
   const regionRef = useRef<HTMLDivElement>(null);
-  const [hasMore, setHasMore] = useState(false);
-
-  const updateOverflowCue = useCallback(() => {
-    const region = regionRef.current;
-    if (!region) return;
-    const overflows = region.scrollHeight > region.clientHeight + 2;
-    const atEnd = region.scrollTop + region.clientHeight >= region.scrollHeight - 2;
-    setHasMore(overflows && !atEnd);
-  }, []);
 
   useEffect(() => {
     const region = regionRef.current;
     if (!region) return;
     region.scrollTop = 0;
-    const frame = window.requestAnimationFrame(updateOverflowCue);
-    const observer = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(updateOverflowCue);
-    observer?.observe(region);
-    window.addEventListener("resize", updateOverflowCue);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", updateOverflowCue);
-    };
-  }, [responseKey, updateOverflowCue]);
+  }, [responseKey]);
 
   return (
     <div className="presentation-scroll-frame">
@@ -514,11 +494,9 @@ function PresentationScrollRegion({
         tabIndex={0}
         role="region"
         aria-label={label}
-        onScroll={updateOverflowCue}
       >
         {children}
       </div>
-      {hasMore && <span className="scroll-more-cue" aria-hidden="true">Scroll for more ↓</span>}
     </div>
   );
 }
