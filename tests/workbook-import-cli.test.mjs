@@ -124,8 +124,8 @@ test("commit rejects a non-Supabase or insecure origin before transport", async 
   const result = await run(
     ["--source", item.source, "--panipat-layout", "standard", "--commit"],
     {
-      SUPABASE_URL: "http://attacker.invalid",
-      SUPABASE_PUBLISHABLE_KEY: "synthetic-public-key",
+      NEXT_PUBLIC_SUPABASE_URL: "http://attacker.invalid",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "synthetic-public-key",
       BIRLA_OPUS_ADMIN_CAPABILITY: "S".repeat(64),
     },
   );
