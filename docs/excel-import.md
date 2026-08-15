@@ -8,7 +8,7 @@ asked—calls the capability-protected Supabase batch-import RPC.
 ## Prerequisites
 
 - Node.js 22.13 or later and dependencies installed from `package-lock.json`.
-- All five checked-in Supabase migrations applied in filename order.
+- All six checked-in Supabase migrations applied in filename order.
 - A current `.xlsx` workbook using all seven required visible sheets and the
   supported A–F header contract.
 - For commit mode only: the public Supabase URL/publishable key and the private

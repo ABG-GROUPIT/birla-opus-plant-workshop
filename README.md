@@ -27,8 +27,9 @@ PostgREST endpoint:
 
 - `workshop_public_list` returns only approved, visible presentation fields.
 - `workshop_media_session_create` creates a one-hour, single-use upload session.
-- `workshop_submit_single_use_case_with_references` atomically creates a hidden
-  one-use-case response and attaches its validated links/files. The original
+- `workshop_submit_single_use_case_idempotent` atomically creates a hidden
+  one-use-case response and attaches its validated links/files. Exact network
+  retries return the first result instead of creating duplicates. The original
   submit RPCs remain for compatibility with older open form tabs.
 - `workshop_admin_list` returns review data after validating the admin capability.
 - `workshop_admin_single_use_case_update` applies edits and status changes after

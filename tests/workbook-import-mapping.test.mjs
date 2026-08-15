@@ -22,7 +22,7 @@ const CURRENT_HEADERS = [
 const REQUIRED_SHEETS = [
   "Panipat (Haryana)",
   "Ludhiana (Punjab)",
-  "Cheyyar (tamil nadu)",
+  "Cheyyar (Tamil Nadu)",
   "Chamarajanagar (Karnataka)",
   "Mahad (Maharashtra)",
   "Kharagpur (West Bengal)",
@@ -31,10 +31,17 @@ const REQUIRED_SHEETS = [
 
 test("recognises all eight workbook value streams", () => {
   const sheets = WORKBOOK_VALUE_STREAMS.map((valueStream, index) => ({
-    name: "Cheyyar (tamil nadu)",
+    name: "Cheyyar (Tamil Nadu)",
     values: [
       ["Sr No.", "Name", "Use Case Theme", "Use Case Description", "Value Streams", "Expected Benefits"],
-      [index + 1, "Leader Name", `Theme ${index + 1}`, "Description", valueStream, "Benefit"],
+      [
+        index + 1,
+        `Fictional Contributor ${index + 1}`,
+        `Synthetic Theme ${index + 1}`,
+        "Entirely fictional description for parser testing",
+        valueStream,
+        "Entirely fictional benefit",
+      ],
     ],
   }));
 
@@ -85,7 +92,7 @@ test("ignores the one hundred serial-only template rows", () => {
 });
 
 test("maps the shifted Panipat layout without inventing a contributor or duplicating text", () => {
-  const repeatedDetail = "Equipment operation\nTroubleshooting\nSpare parts";
+  const repeatedDetail = "Synthetic actuator guide\nImaginary fault codes\nDemo-only parts list";
   const result = parseWorkbookSheets([
     {
       name: "Panipat (Haryana)",
@@ -93,11 +100,11 @@ test("maps the shifted Panipat layout without inventing a contributor or duplica
         ["Sr No.", "Name", "Use Case Theme", "Use Case Description", "Value Streams", "Expected Benefits"],
         [
           1,
-          "EQUIBOT – Equipment troubleshooting",
-          `AI assistant for the plant.\n${repeatedDetail}`,
+          "FICTIONAL-ROBOT — Demo troubleshooting",
+          `Synthetic assistant for a made-up workshop.\n${repeatedDetail}`,
           repeatedDetail,
           "Process Optimization",
-          "Faster troubleshooting",
+          "Shorter fictional-demo resolution time",
         ],
       ],
     },
@@ -106,8 +113,8 @@ test("maps the shifted Panipat layout without inventing a contributor or duplica
   assert.equal(result.publishableEntries.length, 1);
   const [entry] = result.publishableEntries;
   assert.equal(entry.submitterName, "");
-  assert.equal(entry.useCaseTitle, "EQUIBOT – Equipment troubleshooting");
-  assert.equal(entry.useCaseDescription.match(/Equipment operation/g)?.length, 1);
+  assert.equal(entry.useCaseTitle, "FICTIONAL-ROBOT — Demo troubleshooting");
+  assert.equal(entry.useCaseDescription.match(/Synthetic actuator guide/g)?.length, 1);
   assert.equal(entry.sourceKey, "excel-v1|panipat|1");
   assert.match(entry.warnings.join(" "), /left blank/i);
   assert.equal(entry.layoutKind, "shifted");
@@ -116,7 +123,14 @@ test("maps the shifted Panipat layout without inventing a contributor or duplica
 test("requires an explicit Panipat layout decision for populated legacy sheets", () => {
   const result = parseWorkbookSheets([{
     name: "Panipat (Haryana)",
-    values: [CURRENT_HEADERS, [1, "Leader", "Title", "Description", "Safety", "Benefit"]],
+    values: [[...CURRENT_HEADERS], [
+      1,
+      "Fictional Contributor Amber",
+      "Synthetic Legacy Theme",
+      "Entirely fictional legacy description",
+      "Safety",
+      "Entirely fictional benefit",
+    ]],
   }]);
   assert.equal(result.entries.length, 1);
   assert.match(result.workbookErrors.join(" "), /explicit layout decision/i);
@@ -125,11 +139,11 @@ test("requires an explicit Panipat layout decision for populated legacy sheets",
 test("maps standard rows and infers a blank value stream instead of blocking", () => {
   const result = parseWorkbookSheets([
     {
-      name: "Cheyyar (tamil nadu)",
+      name: "Cheyyar (Tamil Nadu)",
       values: [
         ["Sr No.", "Name", "Use Case Theme", "Use Case Description", "Value Streams", "Expected Benefits"],
-        [1, "Rajakumar M", "Filler analytics", "Long description", "Quality", "Higher accuracy"],
-        [2, "Rajakumar M", "Warehouse dispatch analytics", "Long description", "", "Fewer errors"],
+        [1, "Fictional Contributor Cedar", "Synthetic pigment telemetry", "Entirely fictional quality scenario", "Quality", "Higher demo accuracy"],
+        [2, "Fictional Contributor Cedar", "Synthetic warehouse dispatch exercise", "Fictional inventory logistics scenario", "", "Fewer simulated routing errors"],
       ],
     },
   ]);
@@ -140,33 +154,36 @@ test("maps standard rows and infers a blank value stream instead of blocking", (
   assert.equal(result.publishableEntries[1].valueStream, "Supply Chain");
   assert.equal(result.publishableEntries[1].valueStreamInferred, true);
   assert.match(result.publishableEntries[1].warnings.join(" "), /was inferred/i);
-  assert.equal(result.publishableEntries[0].submitterName, "Rajakumar M");
+  assert.equal(result.publishableEntries[0].submitterName, "Fictional Contributor Cedar");
 });
 
 test("infers specialized value streams and keeps explicit workbook choices", () => {
   assert.equal(
     inferValueStream(
-      "Finished goods warehouse throughput and dispatch accuracy",
-      "Inventory picking, staging and truck loading",
-      "Better stock accuracy",
+      "Synthetic warehouse logistics throughput exercise",
+      "Fictional inventory picking, staging, and truck-loading scenario",
+      "More reliable demo stock counts",
     ),
     "Supply Chain",
   );
   assert.equal(
     inferValueStream(
-      "AI-based 360 degree bucket inspection",
-      "OCR and QR validation identifies defective buckets",
-      "Higher quality assurance and fewer complaints",
+      "Synthetic camera inspection of imaginary sample containers",
+      "Fictional OCR validation flags invented defects",
+      "Improved demo quality with fewer simulated defects",
     ),
     "Quality",
   );
-  assert.equal(inferValueStream("Novel idea", "Unclassified improvement", "Benefit"), "Process Optimization");
+  assert.equal(
+    inferValueStream("Synthetic novel idea", "Unclassified fictional improvement", "Demo benefit"),
+    "Process Optimization",
+  );
 
   const explicit = parseWorkbookSheets([{
     name: "Cheyyar (Tamil Nadu)",
     values: [
       ["Sr No.", "Name", "Use Case Theme", "Use Case Description", "Value Streams", "Expected Benefits"],
-      [1, "Leader", "Warehouse dispatch", "Inventory logistics", "Safety", "Fewer incidents"],
+      [1, "Fictional Contributor Indigo", "Synthetic warehouse dispatch drill", "Imaginary inventory logistics scenario", "Safety", "Fewer simulated incidents"],
     ],
   }]).publishableEntries[0];
   assert.equal(explicit.valueStream, "Safety");
@@ -174,13 +191,13 @@ test("infers specialized value streams and keeps explicit workbook choices", () 
 });
 
 test("derives a concise title while preserving an overlong theme in the description", () => {
-  const longTheme = `${"Long manufacturing theme ".repeat(12)}ending`;
+  const longTheme = `${"Long synthetic workshop theme ".repeat(12)}ending`;
   const result = parseWorkbookSheets([
     {
       name: "Mahad (Maharashtra)",
       values: [
         ["Sr No.", "Name", "Use Case Theme", "Use Case Description", "Value Streams", "Expected Benefits"],
-        [1, "Leader Name", longTheme, "Description", "Safety", "Benefit"],
+        [1, "Fictional Contributor Violet", longTheme, "Entirely fictional long-theme description", "Safety", "Entirely fictional benefit"],
       ],
     },
   ]);
@@ -197,7 +214,7 @@ test("emits the source serial and complete worker payload contract", () => {
       name: "Kharagpur (West Bengal)",
       values: [
         ["Sr No.", "Name", "Use Case Theme", "Use Case Description", "Value Streams", "Expected Benefits"],
-        ["UC-17", "Leader Name", "Planning assistant", "Description", "Supply Chain", "Benefit"],
+        ["UC-17", "Fictional Contributor Quartz", "Synthetic planning assistant", "Entirely fictional payload-contract description", "Supply Chain", "Entirely fictional benefit"],
       ],
     },
   ]);
@@ -228,9 +245,9 @@ test("matches the database ASCII source-key contract and detects duplicate keys"
     name: "Cheyyar (Tamil Nadu)",
     values: [
       CURRENT_HEADERS,
-      ["\u00c5-17", "Leader", "First", "Description", "Quality", "Benefit"],
-      ["A 17", "Leader", "Second", "Description", "Quality", "Benefit"],
-      ["\u2603", "Leader", "Third", "Description", "Quality", "Benefit"],
+      ["\u00c5-17", "Fictional Contributor One", "Synthetic First", "Fictional description", "Quality", "Demo benefit"],
+      ["A 17", "Fictional Contributor Two", "Synthetic Second", "Fictional description", "Quality", "Demo benefit"],
+      ["\u2603", "Fictional Contributor Three", "Synthetic Third", "Fictional description", "Quality", "Demo benefit"],
     ],
   }]);
 

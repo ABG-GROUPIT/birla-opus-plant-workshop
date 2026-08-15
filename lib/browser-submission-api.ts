@@ -9,13 +9,11 @@ import {
   sanitizeReferenceFileName,
 } from "./reference-media.ts";
 import type { ReferenceKind } from "./reference-media.ts";
-import { Upload } from "tus-js-client";
 
 /** Codes keep cached form tabs working; RPC responses use canonical names. */
 export type BrowserValueStream = ValueStreamInput;
 
 const REFERENCE_BUCKET = "workshop-references";
-const TUS_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
 
 export interface BrowserReferenceMedia {
   id: string;
@@ -105,6 +103,8 @@ export type PublicBrowserSubmission = Pick<
 >;
 
 export interface SubmitWorkshopResponseInput {
+  /** Stable, unguessable key reused only when retrying the same response. */
+  clientSubmissionId: string;
   plant: PlantName;
   submitterName: string;
   submitterEmail: string;
@@ -262,15 +262,6 @@ function browserApiConfig(): { url: string; publishableKey: string } {
   };
 }
 
-function storageUploadEndpoint(url: string): string {
-  const parsed = new URL(url);
-  if (parsed.hostname.endsWith(".supabase.co")) {
-    const projectRef = parsed.hostname.slice(0, -".supabase.co".length);
-    return `${parsed.protocol}//${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
-  }
-  return `${url.replace(/\/+$/, "")}/storage/v1/upload/resumable`;
-}
-
 function requiredSingleValueStream(
   valueStreams: readonly BrowserValueStream[],
 ): BrowserValueStream {
@@ -284,7 +275,7 @@ function requiredSingleValueStream(
   return valueStreams[0];
 }
 
-/** Browser-safe TUS request settings for one capability-scoped upload slot. */
+/** Browser-safe standard object upload settings for one capability-scoped slot. */
 export function referenceUploadTransport(
   session: ReferenceUploadSession,
   slot: number,
@@ -298,13 +289,14 @@ export function referenceUploadTransport(
   }
 
   const config = browserApiConfig();
+  const objectPath = `${session.sessionId}/${session.uploadToken}/${slot}`;
   return {
-    endpoint: storageUploadEndpoint(config.url),
+    endpoint: `${config.url}/storage/v1/object/${REFERENCE_BUCKET}/${encodedObjectPath(objectPath)}`,
     headers: {
       apikey: config.publishableKey,
       authorization: `Bearer ${config.publishableKey}`,
     },
-    objectPath: `${session.sessionId}/${session.uploadToken}/${slot}`,
+    objectPath,
   };
 }
 
@@ -679,61 +671,43 @@ export async function uploadReferenceFile(
   const mimeType = classification.mimeType;
 
   await new Promise<void>((resolve, reject) => {
-    const upload = new Upload(file, {
-      endpoint: transport.endpoint,
-      retryDelays: [0, 1_000, 3_000, 5_000, 10_000],
-      headers: transport.headers,
-      metadata: {
-        bucketName: REFERENCE_BUCKET,
-        objectName: objectPath,
-        contentType: mimeType,
-        cacheControl: "3600",
-      },
-      chunkSize: TUS_CHUNK_SIZE_BYTES,
-      fingerprint: async () => [
-        "birla-opus-reference",
-        session.sessionId,
-        String(slot),
-        safeFileName,
-        String(file.size),
-        String(file.lastModified),
-      ].join("-"),
-      uploadDataDuringCreation: true,
-      removeFingerprintOnSuccess: true,
-      onError(error) {
-        reject(
-          new BrowserSubmissionApiError(
-            error.message || "The reference file could not be uploaded.",
-            null,
-            "reference_upload_failed",
-          ),
-        );
-      },
-      onProgress(bytesUploaded, bytesTotal) {
-        onProgress?.(bytesTotal > 0 ? bytesUploaded / bytesTotal : 0);
-      },
-      onSuccess() {
-        onProgress?.(1);
-        resolve();
-      },
-    });
-
-    upload.findPreviousUploads().then((previousUploads) => {
-      if (previousUploads.length > 0) {
-        upload.resumeFromPreviousUpload(previousUploads[0]);
+    const request = new XMLHttpRequest();
+    request.open("POST", transport.endpoint);
+    for (const [name, value] of Object.entries(transport.headers)) {
+      request.setRequestHeader(name, value);
+    }
+    request.setRequestHeader("content-type", mimeType);
+    request.setRequestHeader("cache-control", "3600");
+    request.setRequestHeader("x-upsert", "false");
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress?.(event.loaded / event.total);
       }
-      upload.start();
-    }).catch((error: unknown) => {
+    });
+    request.addEventListener("error", () => {
       reject(
         new BrowserSubmissionApiError(
-          error instanceof Error && error.message
-            ? error.message
-            : "The reference upload could not be started.",
+          "The reference upload could not reach the workshop data service.",
           null,
           "reference_upload_failed",
         ),
       );
     });
+    request.addEventListener("load", () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress?.(1);
+        resolve();
+        return;
+      }
+      reject(
+        new BrowserSubmissionApiError(
+          `The reference upload was rejected with status ${request.status}.`,
+          request.status || null,
+          "reference_upload_failed",
+        ),
+      );
+    });
+    request.send(file);
   });
 
   return {
@@ -752,7 +726,8 @@ export async function submitWorkshopResponse(
 ): Promise<{ submission: SubmittedWorkshopResponse }> {
   const valueStream = requiredSingleValueStream(input.valueStreams);
   return {
-    submission: submittedResponse(await callRpc("workshop_submit_single_use_case_with_references", {
+    submission: submittedResponse(await callRpc("workshop_submit_single_use_case_idempotent", {
+      p_client_submission_id: input.clientSubmissionId,
       p_plant: input.plant,
       p_submitter_name: input.submitterName,
       p_submitter_email: input.submitterEmail,

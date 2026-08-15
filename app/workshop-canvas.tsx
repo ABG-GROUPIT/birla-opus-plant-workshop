@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
+  BrowserSubmissionApiError,
   createReferenceUploadSession,
   listAdminSubmissions,
   listPresentationSubmissions,
@@ -94,6 +95,13 @@ type FormState = {
   valueStreams: string[];
   expectedBenefits: string;
   referenceLinks: ReferenceLinkDraft[];
+};
+
+type SubmissionAttempt = {
+  fingerprint: string;
+  clientSubmissionId: string;
+  mediaSession: ReferenceUploadSession | null;
+  uploadedReferences: ReferenceManifestInput[] | null;
 };
 
 type AdminEditState = {
@@ -216,9 +224,14 @@ const VALUE_STREAM_LABELS = [
 ] as const;
 
 const LOCAL_DRAFT_KEY = "birla-opus-leader-response-draft-v1";
+const SUBMISSION_ATTEMPT_KEY = "birla-opus-leader-submit-attempt-v1";
 const ADMIN_CAPABILITY_KEY = "birla-opus-admin-capability-v1";
 const SUBMISSION_SYNC_KEY = "birla-opus-submissions-changed-v1";
 const SUBMISSION_SYNC_CHANNEL = "birla-opus-workshop-sync-v1";
+
+function isInvalidAdminCapabilityError(error: unknown) {
+  return error instanceof BrowserSubmissionApiError && error.code === "28000";
+}
 
 function announceSubmissionChange() {
   if (typeof window === "undefined") return;
@@ -234,6 +247,35 @@ function announceSubmissionChange() {
     channel.postMessage("submissions-changed");
     channel.close();
   }
+}
+
+function submissionAttemptFingerprint(
+  form: FormState,
+  referenceFiles: readonly ReferenceFileDraft[],
+) {
+  return JSON.stringify({
+    plant: form.plant,
+    submitterName: form.submitterName.trim(),
+    submitterEmail: form.submitterEmail.trim().toLowerCase(),
+    designation: form.designation.trim(),
+    useCaseTitle: form.useCaseTitle.trim(),
+    useCaseTheme: form.useCaseTheme.trim(),
+    valueStreams: form.valueStreams,
+    expectedBenefits: form.expectedBenefits.trim(),
+    referenceLinks: form.referenceLinks.map((reference) => ({
+      id: reference.id,
+      title: reference.title.trim(),
+      url: reference.url.trim(),
+    })),
+    referenceFiles: referenceFiles.map((reference) => ({
+      id: reference.id,
+      title: reference.title.trim(),
+      name: reference.file.name,
+      size: reference.file.size,
+      type: reference.file.type,
+      lastModified: reference.file.lastModified,
+    })),
+  });
 }
 
 const EMPTY_FORM: FormState = {
@@ -631,22 +673,51 @@ export function AdminReview() {
   const [notice, setNotice] = useState("");
   const [capability, setCapability] = useState<string | null>(null);
   const [capabilityChecked, setCapabilityChecked] = useState(false);
+  const adminRequestRef = useRef(0);
+
+  const endAdminSession = useCallback((message: string) => {
+    adminRequestRef.current += 1;
+    try {
+      window.sessionStorage.removeItem(ADMIN_CAPABILITY_KEY);
+    } catch {
+      // In-memory access is still cleared when session storage is unavailable.
+    }
+    setCapability(null);
+    setSubmissions([]);
+    setIsLoading(false);
+    setNotice(message);
+  }, []);
+
+  const handleCapabilityError = useCallback((error: unknown) => {
+    if (!isInvalidAdminCapabilityError(error)) return false;
+    endAdminSession(
+      "This admin session is no longer valid. Reopen the complete private admin link to continue.",
+    );
+    return true;
+  }, [endAdminSession]);
 
   const loadSubmissions = useCallback(async (adminCapability: string) => {
+    const requestId = ++adminRequestRef.current;
     setIsLoading(true);
     try {
-      setSubmissions(apiRows(await listAdminSubmissions(adminCapability)));
+      const nextSubmissions = apiRows(await listAdminSubmissions(adminCapability));
+      if (requestId !== adminRequestRef.current) return false;
+      setSubmissions(nextSubmissions);
       setNotice("");
+      return true;
     } catch (error) {
+      if (requestId !== adminRequestRef.current) return false;
+      if (handleCapabilityError(error)) return false;
       setNotice(
         error instanceof Error
           ? error.message
           : "Responses could not be loaded.",
       );
+      return false;
     } finally {
-      setIsLoading(false);
+      if (requestId === adminRequestRef.current) setIsLoading(false);
     }
-  }, []);
+  }, [handleCapabilityError]);
 
   useEffect(() => {
     const startup = window.setTimeout(() => {
@@ -691,12 +762,19 @@ export function AdminReview() {
           ? "This admin link is incomplete. Open the complete private admin URL provided for the workshop."
           : "")}
         capability={capability}
+        onEndSession={() => {
+          endAdminSession(
+            "Admin session ended on this tab. Reopen the complete private admin link to continue.",
+          );
+        }}
+        onCapabilityError={handleCapabilityError}
+        onNotice={setNotice}
         onRefresh={async () => {
           if (capability) await loadSubmissions(capability);
         }}
         onChanged={async (message) => {
-          if (capability) await loadSubmissions(capability);
-          setNotice(message);
+          if (!capability) return;
+          if (await loadSubmissions(capability)) setNotice(message);
         }}
       />
     </main>
@@ -769,6 +847,7 @@ function PresentationView({
     () => submissions.filter((item) => item.status === "approved" && item.isVisible),
     [submissions],
   );
+  const printPresentation = useCallback(() => window.print(), []);
 
   const movePlant = useCallback(
     (direction: number) => {
@@ -880,6 +959,13 @@ function PresentationView({
               <button type="button" onClick={onRefresh} disabled={isLoading}>
                 {isLoading ? "Syncing…" : "Refresh now ↻"}
               </button>
+              <button
+                className="presentation-print-action"
+                type="button"
+                onClick={printPresentation}
+              >
+                Print / Save PDF
+              </button>
             </div>
             {lastUpdatedAt && (
               <small className="presentation-sync-time">
@@ -985,6 +1071,13 @@ function PresentationView({
             disabled={isLoading}
           >
             ↻
+          </button>
+          <button
+            className="presentation-print-action hero-print-action"
+            type="button"
+            onClick={printPresentation}
+          >
+            Print / Save PDF
           </button>
           <button
             type="button"
@@ -1182,6 +1275,7 @@ function SubmissionView({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadMessage, setUploadMessage] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
+  const submissionAttemptRef = useRef<SubmissionAttempt | null>(null);
   const active = getPlant(form.plant);
   const percent = completion(form);
   const totalReferenceItems = referenceFiles.length + form.referenceLinks.length;
@@ -1335,15 +1429,62 @@ function SubmissionView({
     setIsSaving(true);
     setErrors([]);
     try {
-      let mediaSession: ReferenceUploadSession | null = null;
-      let uploadedReferences: ReferenceManifestInput[] = [];
-      if (referenceFiles.length > 0) {
+      const fingerprint = submissionAttemptFingerprint(form, referenceFiles);
+      let attempt = submissionAttemptRef.current;
+      if (!attempt || attempt.fingerprint !== fingerprint) {
+        let clientSubmissionId = "";
+        try {
+          const stored = JSON.parse(
+            window.sessionStorage.getItem(SUBMISSION_ATTEMPT_KEY) ?? "null",
+          ) as { fingerprint?: unknown; clientSubmissionId?: unknown } | null;
+          if (
+            stored?.fingerprint === fingerprint &&
+            typeof stored.clientSubmissionId === "string" &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              stored.clientSubmissionId,
+            )
+          ) {
+            clientSubmissionId = stored.clientSubmissionId;
+          }
+        } catch {
+          try {
+            window.sessionStorage.removeItem(SUBMISSION_ATTEMPT_KEY);
+          } catch {
+            // A storage-restricted browser can still retry within this tab.
+          }
+        }
+        attempt = {
+          fingerprint,
+          clientSubmissionId: clientSubmissionId || crypto.randomUUID(),
+          mediaSession: null,
+          uploadedReferences: null,
+        };
+        submissionAttemptRef.current = attempt;
+        try {
+          window.sessionStorage.setItem(SUBMISSION_ATTEMPT_KEY, JSON.stringify({
+            fingerprint: attempt.fingerprint,
+            clientSubmissionId: attempt.clientSubmissionId,
+          }));
+        } catch {
+          // The in-memory attempt still makes same-tab retries idempotent.
+        }
+      }
+
+      let mediaSession = attempt.mediaSession;
+      let uploadedReferences = attempt.uploadedReferences ?? [];
+      if (referenceFiles.length > 0 && attempt.uploadedReferences === null) {
         setUploadMessage("Preparing secure reference uploads…");
         setUploadProgress(Object.fromEntries(
           referenceFiles.map((reference) => [reference.id, 0]),
         ));
-        const activeSession = await createReferenceUploadSession();
+        const sessionHasExpired = mediaSession?.expiresAt
+          ? Date.parse(mediaSession.expiresAt) <= Date.now()
+          : false;
+        const activeSession = !mediaSession || sessionHasExpired
+          ? await createReferenceUploadSession()
+          : mediaSession;
         mediaSession = activeSession;
+        attempt.mediaSession = activeSession;
         uploadedReferences = await Promise.all(
           referenceFiles.map(async (reference, index) => {
             setUploadMessage(
@@ -1365,6 +1506,7 @@ function SubmissionView({
             };
           }),
         );
+        attempt.uploadedReferences = uploadedReferences;
       }
 
       setUploadMessage("Saving the response for admin verification…");
@@ -1377,6 +1519,7 @@ function SubmissionView({
         }),
       );
       const payload = await submitWorkshopResponse({
+        clientSubmissionId: attempt.clientSubmissionId,
         plant: form.plant as AdminSubmissionUpdateInput["plant"],
         submitterName: form.submitterName,
         submitterEmail: form.submitterEmail,
@@ -1395,6 +1538,12 @@ function SubmissionView({
       setLastSubmittedAt(payload.submission?.submittedAt ?? new Date().toISOString());
       onSaved("Response submitted for verification. You can enter another response now.");
       window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+      try {
+        window.sessionStorage.removeItem(SUBMISSION_ATTEMPT_KEY);
+      } catch {
+        // The in-memory attempt is cleared below.
+      }
+      submissionAttemptRef.current = null;
       setForm(EMPTY_FORM);
       setReferenceFiles([]);
       setUploadProgress({});
@@ -1798,10 +1947,12 @@ function AdminReferenceCard({
   reference,
   capability,
   onSaved,
+  onCapabilityError,
 }: {
   reference: BrowserReferenceMedia;
   capability: string | null;
   onSaved: (message: string) => Promise<void>;
+  onCapabilityError: (error: unknown) => boolean;
 }) {
   const [title, setTitle] = useState(reference.title);
   const [externalUrl, setExternalUrl] = useState(reference.externalUrl ?? "");
@@ -1835,6 +1986,7 @@ function AdminReferenceCard({
       announceSubmissionChange();
       await onSaved("Reference media updated.");
     } catch (updateError) {
+      if (onCapabilityError(updateError)) return;
       setError(
         updateError instanceof Error && updateError.message
           ? updateError.message
@@ -1900,6 +2052,9 @@ function ReviewView({
   capability,
   onRefresh,
   onChanged,
+  onEndSession,
+  onCapabilityError,
+  onNotice,
 }: {
   submissions: Submission[];
   isLoading: boolean;
@@ -1907,6 +2062,9 @@ function ReviewView({
   capability: string | null;
   onRefresh: () => Promise<void>;
   onChanged: (message: string) => Promise<void>;
+  onEndSession: () => void;
+  onCapabilityError: (error: unknown) => boolean;
+  onNotice: (message: string) => void;
 }) {
   const [filter, setFilter] = useState<"all" | Status>("submitted");
   const [selectedId, setSelectedId] = useState("");
@@ -1957,8 +2115,14 @@ function ReviewView({
       announceSubmissionChange();
       setIsEditing(false);
       await onChanged(message);
-    } catch {
-      await onChanged("The response could not be updated. Please try again.");
+    } catch (error) {
+      if (!onCapabilityError(error)) {
+        onNotice(
+          error instanceof Error && error.message
+            ? error.message
+            : "The response could not be updated. Please try again.",
+        );
+      }
     } finally {
       setIsUpdating(false);
     }
@@ -2026,6 +2190,11 @@ function ReviewView({
         >
           {isLoading ? "Refreshing…" : "Refresh queue ↻"}
         </button>
+        {capability && (
+          <button className="end-admin-session" type="button" onClick={onEndSession}>
+            End admin session
+          </button>
+        )}
       </div>
 
       <div className="review-layout">
@@ -2225,6 +2394,7 @@ function ReviewView({
                         reference={reference}
                         capability={capability}
                         onSaved={onChanged}
+                        onCapabilityError={onCapabilityError}
                       />
                     ))}
                   </div>
