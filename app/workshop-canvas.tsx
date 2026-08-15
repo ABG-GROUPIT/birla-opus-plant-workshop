@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   BrowserSubmissionApiError,
   createReferenceUploadSession,
+  fetchAdminReferenceFile,
   listAdminSubmissions,
   listPresentationSubmissions,
   submitWorkshopResponse,
@@ -403,7 +404,7 @@ function referenceDownloadUrl(reference: BrowserReferenceMedia) {
   if (!reference.openUrl || reference.kind === "link") return reference.openUrl;
   try {
     const url = new URL(reference.openUrl);
-    url.searchParams.set("download", reference.fileName ?? reference.title);
+    url.searchParams.set("disposition", "attachment");
     return url.toString();
   } catch {
     return reference.openUrl;
@@ -1958,7 +1959,45 @@ function AdminReferenceCard({
   const [externalUrl, setExternalUrl] = useState(reference.externalUrl ?? "");
   const [isVisible, setIsVisible] = useState(reference.isVisible);
   const [isSaving, setIsSaving] = useState(false);
+  const [isOpening, setIsOpening] = useState(false);
   const [error, setError] = useState("");
+
+  const openReference = async () => {
+    if (reference.kind === "link") {
+      window.open(reference.openUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!capability) return;
+
+    const pendingWindow = window.open("about:blank", "_blank");
+    if (pendingWindow) pendingWindow.opener = null;
+    setIsOpening(true);
+    setError("");
+    try {
+      const file = await fetchAdminReferenceFile(capability, reference.id);
+      const objectUrl = URL.createObjectURL(file);
+      if (pendingWindow) {
+        pendingWindow.location.replace(objectUrl);
+      } else {
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (openError) {
+      pendingWindow?.close();
+      if (onCapabilityError(openError)) return;
+      setError(
+        openError instanceof Error && openError.message
+          ? openError.message
+          : "This reference could not be opened.",
+      );
+    } finally {
+      setIsOpening(false);
+    }
+  };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -2002,9 +2041,14 @@ function AdminReferenceCard({
       <div className="admin-reference-heading">
         <span>{referenceMeta(reference)}</span>
         {reference.openUrl && (
-          <a href={reference.openUrl} target="_blank" rel="noopener noreferrer">
-            Open reference ↗
-          </a>
+          <button
+            className="admin-reference-open"
+            type="button"
+            disabled={isOpening || (reference.kind !== "link" && !capability)}
+            onClick={() => void openReference()}
+          >
+            {isOpening ? "Opening…" : "Open reference ↗"}
+          </button>
         )}
       </div>
       <form className="admin-reference-form" onSubmit={save}>

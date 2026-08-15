@@ -4,6 +4,7 @@ import { after, test } from "node:test";
 import {
   BrowserSubmissionApiError,
   createReferenceUploadSession,
+  fetchAdminReferenceFile,
   listAdminSubmissions,
   listPresentationSubmissions,
   referenceUploadTransport,
@@ -72,7 +73,7 @@ const publicSubmission = {
       isVisible: true,
       sortOrder: 0,
       openUrl:
-        "https://example.supabase.co/storage/v1/object/public/workshop-references/session-a/plant%20planning%20deck.pptx",
+        "https://example.supabase.co/functions/v1/workshop-reference-access?id=26b8d5f0-8c6a-41ce-bbd6-7113cc184b95",
     },
     {
       id: "df65694e-5129-4a91-b86b-378c1439bd36",
@@ -497,6 +498,32 @@ test("updates one admin reference without putting the capability in the URL", as
     p_is_visible: false,
   });
   assert.equal(requests[0].input.includes("unguessable-capability"), false);
+});
+
+test("reads a private admin reference without putting the capability in the URL", async (t) => {
+  const requests = captureFetch(t, { fictional: "private file bytes" });
+
+  const file = await fetchAdminReferenceFile(
+    "unguessable-capability",
+    publicSubmission.references[0].id,
+  );
+
+  assert.ok(file instanceof Blob);
+  assert.equal(
+    requests[0].input,
+    "https://example.supabase.co/functions/v1/workshop-reference-access",
+  );
+  assert.equal(requests[0].input.includes("unguessable-capability"), false);
+  assert.equal(requests[0].init.method, "POST");
+  assert.equal(requests[0].init.cache, "no-store");
+  assert.deepEqual(JSON.parse(requests[0].init.body), {
+    referenceId: publicSubmission.references[0].id,
+    capability: "unguessable-capability",
+    disposition: "inline",
+  });
+  const headers = new Headers(requests[0].init.headers);
+  assert.equal(headers.get("authorization"), null);
+  assert.equal(headers.get("apikey"), null);
 });
 
 test("surfaces useful PostgREST errors without leaking an authorization header", async (t) => {

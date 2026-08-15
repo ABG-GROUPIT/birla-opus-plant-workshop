@@ -14,6 +14,7 @@ import type { ReferenceKind } from "./reference-media.ts";
 export type BrowserValueStream = ValueStreamInput;
 
 const REFERENCE_BUCKET = "workshop-references";
+const REFERENCE_ACCESS_FUNCTION = "workshop-reference-access";
 
 export interface BrowserReferenceMedia {
   id: string;
@@ -26,7 +27,7 @@ export interface BrowserReferenceMedia {
   sizeBytes: number | null;
   isVisible: boolean;
   sortOrder: number;
-  /** Direct browser-safe URL for either an HTTPS link or a stored object. */
+  /** HTTPS link or revocable Edge Function URL for a stored object. */
   openUrl: string;
 }
 
@@ -309,9 +310,11 @@ function encodedObjectPath(path: string): string {
     .join("/");
 }
 
-function publicObjectUrl(path: string): string {
+function publicReferenceUrl(referenceId: string): string {
   const { url } = browserApiConfig();
-  return `${url}/storage/v1/object/public/${REFERENCE_BUCKET}/${encodedObjectPath(path)}`;
+  const endpoint = new URL(`${url}/functions/v1/${REFERENCE_ACCESS_FUNCTION}`);
+  endpoint.searchParams.set("id", referenceId);
+  return endpoint.toString();
 }
 
 function secureExternalUrl(value: unknown): string | null {
@@ -373,7 +376,7 @@ function normaliseReferenceMedia(
     sizeBytes,
     isVisible: value.isVisible !== false,
     sortOrder,
-    openUrl: externalUrl ?? (objectPath ? publicObjectUrl(objectPath) : ""),
+    openUrl: externalUrl ?? (objectPath ? publicReferenceUrl(id) : ""),
   };
 }
 
@@ -803,4 +806,48 @@ export async function updateAdminReference(
       p_is_visible: input.isVisible,
     })),
   };
+}
+
+/**
+ * Reads a private file after the Edge Function revalidates the admin
+ * capability. The raw capability stays in the POST body and never enters a
+ * URL, Storage path, static asset, or browser-side privileged credential.
+ */
+export async function fetchAdminReferenceFile(
+  capability: string,
+  referenceId: string,
+  disposition: "inline" | "attachment" = "inline",
+): Promise<Blob> {
+  const config = browserApiConfig();
+  let response: Response;
+  try {
+    response = await fetch(
+      `${config.url}/functions/v1/${REFERENCE_ACCESS_FUNCTION}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          referenceId,
+          capability,
+          disposition,
+        }),
+        cache: "no-store",
+      },
+    );
+  } catch (error) {
+    throw new BrowserSubmissionApiError(
+      error instanceof Error && error.message
+        ? `Unable to reach reference delivery: ${error.message}`
+        : "Unable to reach reference delivery.",
+      null,
+      "network_error",
+    );
+  }
+
+  if (!response.ok) {
+    throw rpcError(response, await responsePayload(response));
+  }
+  return await response.blob();
 }

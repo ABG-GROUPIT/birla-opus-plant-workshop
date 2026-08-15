@@ -2708,11 +2708,21 @@ a:focus-visible,
   text-transform: uppercase;
 }
 
-.admin-reference-heading a {
+.admin-reference-heading a,
+.admin-reference-open {
+  background: transparent;
+  border: 0;
   color: var(--green-deep);
+  cursor: pointer;
   font-size: 10px;
   font-weight: 700;
+  padding: 0;
   text-decoration: none;
+}
+
+.admin-reference-open:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .admin-reference-form {
