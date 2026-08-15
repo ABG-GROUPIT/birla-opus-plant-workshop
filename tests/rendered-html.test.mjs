@@ -30,6 +30,12 @@ test("contains the compact Birla Opus presentation experience", async () => {
   assert.match(canvas, /target="_blank"/);
   assert.match(canvas, /noopener noreferrer/);
   assert.match(canvas, /Refresh now/);
+  assert.match(canvas, /Refresh queue/);
+  assert.match(canvas, /filtered\.find\(\(item\) => item\.id === selectedId\)/);
+  assert.match(canvas, /Excel import/);
+  assert.match(canvas, /required=\{selected\.sourceKind !== "excel"\}/);
+  assert.match(canvas, /form\.useCaseTheme\.length\}\/12000/);
+  assert.match(canvas, /form\.expectedBenefits\.length\}\/12000/);
   assert.match(canvas, /3_000/);
   assert.match(canvas, /BroadcastChannel/);
   assert.match(canvas, /pageshow/);

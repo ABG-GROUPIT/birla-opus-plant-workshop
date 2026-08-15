@@ -48,7 +48,8 @@ in browser code, a `NEXT_PUBLIC_` variable, or GitHub Actions configuration.
 - The separately supplied raw admin capability matching the stored hash
 
 See [Submission backend setup](docs/backend-setup.md) for the database and
-deployment checklist.
+deployment checklist. See [Dependency change provenance](docs/dependency-provenance.md)
+before promoting the local recovery branch.
 
 ## Local setup
 
@@ -77,7 +78,8 @@ must be reattached after the tab is closed.
 
 - Every response contains one freehand `useCaseTitle` and one freehand
   `useCaseTheme`. A leader submits another form for every additional use case.
-- `valueStreams` contains exactly one fixed value (`"1"` through `"4"`).
+- `valueStreams` contains exactly one fixed value (`"1"` through `"8"`),
+  mapped to the eight named value streams in the UI and database.
 - `expectedBenefits` is freehand presentation copy.
 - Within each plant or Head Office, responses are ordered by a normalized use
   case title so leaders contributing to the same shared title stay together.
@@ -99,6 +101,34 @@ npm test
 ```
 
 `npm test` runs a production Next.js build before the automated tests.
+
+## Excel fallback
+
+The Excel route is a local, one-shot operator command. The same `.xlsx` bytes
+are parsed and hashed by the command; no separate inspection JSON is required.
+It validates the required sheets and headers, rejects formulas in response
+cells, macros, external links, embedded/ActiveX parts, merged cells, unsafe
+extensions, oversized workbooks, and oversized batches.
+
+Start with a private dry run and retain its machine-readable report:
+
+```bash
+npm run workbook:import -- --source "path/to/workbook.xlsx" --report "path/to/preflight.json"
+```
+
+If the Panipat sheet contains responses, the operator must explicitly add
+`--panipat-layout standard` for the documented A–F template or
+`--panipat-layout shifted` for the known legacy shifted layout. This prevents a
+name-like cell from being silently reinterpreted as a use-case title.
+
+After reviewing a clean report, configure the private operator environment and
+use `--commit` to send complete and incomplete row receipts into the same
+Supabase governance pipeline as form submissions. Direct publication is an
+exceptional bypass and requires explicit acknowledgement; inferred value
+streams remain blocked from direct publication unless separately acknowledged.
+
+See [Excel workbook import](docs/excel-import.md) for prerequisites, exact
+commands, result handling, retry behavior, and safety limits.
 
 ## GitHub Pages deployment
 

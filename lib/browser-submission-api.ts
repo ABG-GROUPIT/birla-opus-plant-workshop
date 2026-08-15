@@ -80,6 +80,10 @@ export interface BrowserSubmission {
   updatedAt: string;
   submittedAt: string | null;
   reviewedAt: string | null;
+  sourceKind: "web" | "excel";
+  sourceSheet: string | null;
+  sourceRow: number | null;
+  importedAt: string | null;
   referenceId?: string;
   references: BrowserReferenceMedia[];
 }
@@ -140,6 +144,7 @@ export interface AdminSubmissionUpdateInput {
 
 export interface AdminExcelImportEntry {
   sourceKey: string;
+  sourceBusinessKey?: string;
   sourceSheet: string;
   sourceRow: number;
   sourceSerial: string;
@@ -150,6 +155,7 @@ export interface AdminExcelImportEntry {
   useCaseTitle: string;
   useCaseDescription: string;
   valueStream: BrowserValueStream | null;
+  valueStreamInferred?: boolean;
   expectedBenefits: string;
   sourcePayload?: Record<string, unknown>;
 }

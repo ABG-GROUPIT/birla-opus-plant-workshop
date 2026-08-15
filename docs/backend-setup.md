@@ -44,6 +44,7 @@ workflow:
 2. [`202607160002_static_browser_rpc.sql`](../supabase/migrations/202607160002_static_browser_rpc.sql)
 3. [`202607160003_reference_media.sql`](../supabase/migrations/202607160003_reference_media.sql)
 4. [`202607160004_single_use_case_head_office.sql`](../supabase/migrations/202607160004_single_use_case_head_office.sql)
+5. [`202607160005_excel_batch_import.sql`](../supabase/migrations/202607160005_excel_batch_import.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
@@ -55,13 +56,16 @@ metadata, restricted anonymous uploads, admin reference controls, and reference
 fields in the public/admin response envelopes. The fourth migration adds the
 Head Office (Mumbai) entity, one freehand use-case title and theme, single-use-
 case browser/admin RPCs, legacy synchronization, and plant/use-case ordering for
-the presentation.
+the presentation. The fifth migration establishes the eight named value
+streams, aligns long-text limits at 12,000 characters, adds Excel source
+lineage, checksum/idempotency controls, atomic batch receipts, and the
+capability-protected Excel import RPC.
 
 The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying all four migrations, confirm that:
+After applying all five migrations, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
 - the intended `public.workshop_*` RPC functions exist;
@@ -71,6 +75,9 @@ After applying all four migrations, confirm that:
 - anonymous uploads fail unless the object path contains an active media-session
   ID and its matching raw capability; and
 - the upload session becomes unusable after submission or one hour.
+- `workshop_private.excel_import_batches` exists and
+  `workshop_admin_excel_batch_import(...)` is executable only through the
+  capability-gated wrapper intended by migration 005.
 
 ### Reference-media limits
 
@@ -207,3 +214,10 @@ Supabase is the authoritative store. The previous server-side webhook mirror is
 not part of the static RPC request path. If a Sheet mirror is required later,
 implement it from Supabase with a database webhook or an Edge Function so Sheet
 latency cannot delay or roll back the leader's submission.
+
+## Excel operator boundary
+
+The local Excel operator flow is documented separately in
+[Excel workbook import](excel-import.md). Its admin capability belongs only in
+a private operator environment and must never be placed in `.env.local`, a
+`NEXT_PUBLIC_` variable, GitHub Actions, the repository, or a shared report.

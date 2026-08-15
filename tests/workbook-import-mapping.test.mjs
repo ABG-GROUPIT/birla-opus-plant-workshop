@@ -6,7 +6,28 @@ import {
   inferValueStream,
   parseWorkbookSheets,
   toImportPayloadEntry,
+  validateImportEntries,
+  validateWorkbookSchema,
 } from "../scripts/workbook-import-mapping.mjs";
+
+const CURRENT_HEADERS = [
+  "Sr No.",
+  "Name",
+  "Use Case Theme (100 charac)",
+  "Use Case Description",
+  "Value Streams (Please Select DROP DOWN)",
+  "Expected Benefits",
+];
+
+const REQUIRED_SHEETS = [
+  "Panipat (Haryana)",
+  "Ludhiana (Punjab)",
+  "Cheyyar (tamil nadu)",
+  "Chamarajanagar (Karnataka)",
+  "Mahad (Maharashtra)",
+  "Kharagpur (West Bengal)",
+  "Mumbai (Head Office)",
+];
 
 test("recognises all eight workbook value streams", () => {
   const sheets = WORKBOOK_VALUE_STREAMS.map((valueStream, index) => ({
@@ -22,6 +43,36 @@ test("recognises all eight workbook value streams", () => {
     assert.equal(result.publishableEntries.length, 1);
     assert.equal(result.publishableEntries[0].valueStream, WORKBOOK_VALUE_STREAMS[index]);
   }
+});
+
+test("validates the complete workbook sheet and header contract", () => {
+  const sheets = REQUIRED_SHEETS.map((name) => ({
+    name,
+    hidden: 0,
+    values: [CURRENT_HEADERS],
+  }));
+
+  assert.deepEqual(validateWorkbookSchema(sheets), { errors: [], warnings: [] });
+});
+
+test("rejects missing, reordered, hidden, and extra workbook fields", () => {
+  const sheets = REQUIRED_SHEETS.slice(0, -1).map((name, index) => ({
+    name,
+    hidden: index === 0 ? 1 : 0,
+    values: [[
+      ...(index === 1
+        ? [CURRENT_HEADERS[1], CURRENT_HEADERS[0], ...CURRENT_HEADERS.slice(2)]
+        : CURRENT_HEADERS),
+      ...(index === 2 ? ["Unexpected"] : []),
+    ]],
+  }));
+  sheets[3].values.push([1, "Leader", "Title", "Description", "Safety", "Benefit", "Hidden extra"]);
+
+  const result = validateWorkbookSchema(sheets);
+  assert.ok(result.errors.some((message) => /must be visible/i.test(message)));
+  assert.ok(result.errors.some((message) => /column 1/i.test(message)));
+  assert.ok(result.errors.some((message) => /after column F/i.test(message)));
+  assert.ok(result.errors.some((message) => /Mumbai \(Head Office\)/i.test(message)));
 });
 
 test("ignores the one hundred serial-only template rows", () => {
@@ -50,7 +101,7 @@ test("maps the shifted Panipat layout without inventing a contributor or duplica
         ],
       ],
     },
-  ]);
+  ], { panipatLayout: "shifted" });
 
   assert.equal(result.publishableEntries.length, 1);
   const [entry] = result.publishableEntries;
@@ -59,6 +110,16 @@ test("maps the shifted Panipat layout without inventing a contributor or duplica
   assert.equal(entry.useCaseDescription.match(/Equipment operation/g)?.length, 1);
   assert.equal(entry.sourceKey, "excel-v1|panipat|1");
   assert.match(entry.warnings.join(" "), /left blank/i);
+  assert.equal(entry.layoutKind, "shifted");
+});
+
+test("requires an explicit Panipat layout decision for populated legacy sheets", () => {
+  const result = parseWorkbookSheets([{
+    name: "Panipat (Haryana)",
+    values: [CURRENT_HEADERS, [1, "Leader", "Title", "Description", "Safety", "Benefit"]],
+  }]);
+  assert.equal(result.entries.length, 1);
+  assert.match(result.workbookErrors.join(" "), /explicit layout decision/i);
 });
 
 test("maps standard rows and infers a blank value stream instead of blocking", () => {
@@ -158,4 +219,42 @@ test("emits the source serial and complete worker payload contract", () => {
   ]);
   assert.equal(payload.sourceSerial, "UC-17");
   assert.equal(payload.sourceKey, "excel-v1|kharagpur|uc-17");
+  assert.equal(result.publishableEntries[0].normalizationVersion, "excel-v1.1");
+  assert.match(result.publishableEntries[0].rawColumnsSha256, /^[a-f0-9]{64}$/);
+});
+
+test("matches the database ASCII source-key contract and detects duplicate keys", () => {
+  const result = parseWorkbookSheets([{
+    name: "Cheyyar (Tamil Nadu)",
+    values: [
+      CURRENT_HEADERS,
+      ["\u00c5-17", "Leader", "First", "Description", "Quality", "Benefit"],
+      ["A 17", "Leader", "Second", "Description", "Quality", "Benefit"],
+      ["\u2603", "Leader", "Third", "Description", "Quality", "Benefit"],
+    ],
+  }]);
+
+  assert.equal(result.entries[0].sourceKey, "excel-v1|cheyyar|17");
+  assert.equal(result.entries[1].sourceKey, "excel-v1|cheyyar|a-17");
+  assert.equal(result.entries[2].sourceKey, "");
+  assert.ok(result.entries[2].missingFields.includes("sourceKey"));
+
+  const duplicate = { ...result.entries[1], sourceKey: result.entries[0].sourceKey };
+  assert.match(
+    validateImportEntries([result.entries[0], duplicate]).errors.join(" "),
+    /duplicate source key/i,
+  );
+});
+
+test("mirrors server field limits before commit", () => {
+  const result = parseWorkbookSheets([{
+    name: "Cheyyar (Tamil Nadu)",
+    values: [
+      CURRENT_HEADERS,
+      [1, "L".repeat(121), "Title", "D".repeat(12001), "Quality", "Benefit"],
+    ],
+  }]);
+  const errors = validateImportEntries(result.entries).errors.join(" ");
+  assert.match(errors, /submitterName exceeds 120/i);
+  assert.match(errors, /useCaseDescription exceeds 12000/i);
 });

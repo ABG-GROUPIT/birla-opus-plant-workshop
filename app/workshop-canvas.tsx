@@ -64,6 +64,10 @@ type Submission = {
   createdAt: string;
   updatedAt: string;
   submittedAt: string | null;
+  sourceKind: "web" | "excel";
+  sourceSheet: string | null;
+  sourceRow: number | null;
+  importedAt: string | null;
   referenceId?: string;
   references: BrowserReferenceMedia[];
 };
@@ -279,6 +283,10 @@ function normaliseSubmission(
     createdAt: String(value.createdAt ?? new Date().toISOString()),
     updatedAt: String(value.updatedAt ?? value.createdAt ?? new Date().toISOString()),
     submittedAt: value.submittedAt ? String(value.submittedAt) : null,
+    sourceKind: value.sourceKind === "excel" ? "excel" : "web",
+    sourceSheet: value.sourceSheet ? String(value.sourceSheet) : null,
+    sourceRow: typeof value.sourceRow === "number" ? value.sourceRow : null,
+    importedAt: value.importedAt ? String(value.importedAt) : null,
     references: Array.isArray(value.references) ? value.references : [],
   };
 }
@@ -683,6 +691,9 @@ export function AdminReview() {
           ? "This admin link is incomplete. Open the complete private admin URL provided for the workshop."
           : "")}
         capability={capability}
+        onRefresh={async () => {
+          if (capability) await loadSubmissions(capability);
+        }}
         onChanged={async (message) => {
           if (capability) await loadSubmissions(capability);
           setNotice(message);
@@ -1561,10 +1572,10 @@ function SubmissionView({
                     useCaseTheme: event.target.value,
                   }))}
                   placeholder="Define the theme, opportunity or intervention in a few clear sentences…"
-                  maxLength={2000}
+                  maxLength={12000}
                   rows={5}
                 />
-                <small>{form.useCaseTheme.length}/2000</small>
+                <small>{form.useCaseTheme.length}/12000</small>
               </label>
             </div>
           </fieldset>
@@ -1597,10 +1608,10 @@ function SubmissionView({
                 value={form.expectedBenefits}
                 onChange={(event) => setForm((current) => ({ ...current, expectedBenefits: event.target.value }))}
                 placeholder="What becomes better if this idea succeeds? Consider quality, speed, cost, safety, reliability or customer value…"
-                maxLength={4000}
+                maxLength={12000}
                 rows={8}
               />
-              <small>{form.expectedBenefits.length}/4000</small>
+              <small>{form.expectedBenefits.length}/12000</small>
             </label>
           </fieldset>
 
@@ -1887,12 +1898,14 @@ function ReviewView({
   isLoading,
   notice,
   capability,
+  onRefresh,
   onChanged,
 }: {
   submissions: Submission[];
   isLoading: boolean;
   notice: string;
   capability: string | null;
+  onRefresh: () => Promise<void>;
   onChanged: (message: string) => Promise<void>;
 }) {
   const [filter, setFilter] = useState<"all" | Status>("submitted");
@@ -1917,7 +1930,7 @@ function ReviewView({
       if (titleOrder !== 0) return titleOrder;
       return left.createdAt.localeCompare(right.createdAt);
     });
-  const selected = submissions.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
+  const selected = filtered.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
 
   const update = async (changes: SubmissionPatch, message: string) => {
     if (!selected || !capability) return;
@@ -2006,6 +2019,13 @@ function ReviewView({
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          disabled={isLoading || !capability}
+          onClick={() => void onRefresh()}
+        >
+          {isLoading ? "Refreshing…" : "Refresh queue ↻"}
+        </button>
       </div>
 
       <div className="review-layout">
@@ -2052,6 +2072,13 @@ function ReviewView({
                     {selected.designation ? `, ${selected.designation}` : ""}
                     <br />
                     {formatDateTime(selected.submittedAt)}
+                    {selected.sourceKind === "excel" && (
+                      <>
+                        <br />
+                        Excel import{selected.sourceSheet ? ` · ${selected.sourceSheet}` : ""}
+                        {selected.sourceRow ? ` · row ${selected.sourceRow}` : ""}
+                      </>
+                    )}
                   </span>
                 </div>
                 <span className={`detail-status status-${selected.status}`}>{statusLabel(selected.status)}</span>
@@ -2078,7 +2105,7 @@ function ReviewView({
                         <input
                           value={editForm.submitterName}
                           onChange={(event) => setEditForm((current) => current ? ({ ...current, submitterName: event.target.value }) : current)}
-                          required
+                          required={selected.sourceKind !== "excel"}
                         />
                       </label>
                       <label>
@@ -2087,7 +2114,7 @@ function ReviewView({
                           type="email"
                           value={editForm.submitterEmail}
                           onChange={(event) => setEditForm((current) => current ? ({ ...current, submitterEmail: event.target.value }) : current)}
-                          required
+                          required={selected.sourceKind !== "excel"}
                         />
                       </label>
                       <label>
@@ -2095,7 +2122,7 @@ function ReviewView({
                         <input
                           value={editForm.designation}
                           onChange={(event) => setEditForm((current) => current ? ({ ...current, designation: event.target.value }) : current)}
-                          required
+                          required={selected.sourceKind !== "excel"}
                         />
                       </label>
                       <label>
@@ -2140,7 +2167,7 @@ function ReviewView({
                         value={editForm.useCaseTheme}
                         onChange={(event) => setEditForm((current) => current ? ({ ...current, useCaseTheme: event.target.value }) : current)}
                         rows={4}
-                        maxLength={2000}
+                        maxLength={12000}
                         required
                       />
                     </label>
@@ -2153,7 +2180,7 @@ function ReviewView({
                         value={editForm.expectedBenefits}
                         onChange={(event) => setEditForm((current) => current ? ({ ...current, expectedBenefits: event.target.value }) : current)}
                         rows={8}
-                        maxLength={4000}
+                        maxLength={12000}
                         required
                       />
                     </label>
