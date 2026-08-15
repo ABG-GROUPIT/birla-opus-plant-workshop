@@ -290,7 +290,7 @@ export function workbookSafetyFindings(inspection) {
     );
     if (hiddenPopulatedRows.length > 0) {
       errors.push(
-        `Sheet â€œ${sheet.name}â€ contains populated hidden rows: ${hiddenPopulatedRows.slice(0, 12).map((index) => index + 1).join(", ")}.`,
+        `Sheet "${sheet.name}" contains populated hidden rows: ${hiddenPopulatedRows.slice(0, 12).map((index) => index + 1).join(", ")}.`,
       );
     }
     const hiddenPopulatedColumns = sheet.hiddenColumns.filter((columnIndex) =>
@@ -298,7 +298,7 @@ export function workbookSafetyFindings(inspection) {
     );
     if (hiddenPopulatedColumns.length > 0) {
       errors.push(
-        `Sheet â€œ${sheet.name}â€ contains populated hidden columns: ${hiddenPopulatedColumns.slice(0, 12).map((index) => XLSX.utils.encode_col(index)).join(", ")}.`,
+        `Sheet "${sheet.name}" contains populated hidden columns: ${hiddenPopulatedColumns.slice(0, 12).map((index) => XLSX.utils.encode_col(index)).join(", ")}.`,
       );
     }
   }
