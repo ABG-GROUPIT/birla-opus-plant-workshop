@@ -1573,6 +1573,25 @@ function SubmissionView({
     );
   };
 
+  const clearLocalDraft = () => {
+    window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+    try {
+      window.sessionStorage.removeItem(SUBMISSION_ATTEMPT_KEY);
+    } catch {
+      // Clearing the visible draft must still work when session storage is restricted.
+    }
+    submissionAttemptRef.current = null;
+    setForm(EMPTY_FORM);
+    setReferenceFiles([]);
+    setUploadProgress({});
+    setUploadMessage("");
+    setFileInputKey((current) => current + 1);
+    setErrors([]);
+    setSavedReference("");
+    setLastSubmittedAt(null);
+    onSaved("Local draft cleared from this device.");
+  };
+
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     void submit();
@@ -1934,8 +1953,11 @@ function SubmissionView({
           </fieldset>
 
           <div className="form-actions">
-            <div><span>Local draft</span><small>Saved only on this device until submitted</small></div>
-            <button className="secondary-action" type="button" onClick={saveLocalDraft} disabled={isSaving}>Save draft</button>
+            <div className="form-draft-summary"><span>Local draft</span><small>Saved only on this device until submitted</small></div>
+            <div className="form-draft-actions">
+              <button className="secondary-action" type="button" onClick={saveLocalDraft} disabled={isSaving}>Save draft</button>
+              <button className="secondary-action" type="button" onClick={clearLocalDraft} disabled={isSaving}>Clear draft</button>
+            </div>
             <button className="primary-action" type="submit" disabled={isSaving}>{isSaving ? "Saving…" : "Submit for verification"} <span>↗</span></button>
           </div>
         </form>
