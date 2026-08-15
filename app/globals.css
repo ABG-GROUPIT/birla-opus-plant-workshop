@@ -2220,20 +2220,25 @@ a:focus-visible,
   padding: 20px clamp(24px, 4.5vw, 64px);
 }
 
-.form-actions > div span,
-.form-actions > div small {
+.form-draft-summary span,
+.form-draft-summary small {
   display: block;
 }
 
-.form-actions > div span {
+.form-draft-summary span {
   font-size: 11px;
   font-weight: 650;
 }
 
-.form-actions > div small {
+.form-draft-summary small {
   color: var(--muted);
   font-size: 9px;
   margin-top: 3px;
+}
+
+.form-draft-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .secondary-action,
@@ -2708,11 +2713,21 @@ a:focus-visible,
   text-transform: uppercase;
 }
 
-.admin-reference-heading a {
+.admin-reference-heading a,
+.admin-reference-open {
+  background: transparent;
+  border: 0;
   color: var(--green-deep);
+  cursor: pointer;
   font-size: 10px;
   font-weight: 700;
+  padding: 0;
   text-decoration: none;
+}
+
+.admin-reference-open:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .admin-reference-form {
@@ -3305,12 +3320,17 @@ a:focus-visible,
   }
 
   .form-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     padding: 16px;
   }
 
-  .form-actions > div {
+  .form-draft-summary {
     display: none;
+  }
+
+  .form-draft-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .form-actions button {

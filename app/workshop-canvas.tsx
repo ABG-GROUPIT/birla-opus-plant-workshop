@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   BrowserSubmissionApiError,
   createReferenceUploadSession,
+  fetchAdminReferenceFile,
   listAdminSubmissions,
   listPresentationSubmissions,
   submitWorkshopResponse,
@@ -403,7 +404,7 @@ function referenceDownloadUrl(reference: BrowserReferenceMedia) {
   if (!reference.openUrl || reference.kind === "link") return reference.openUrl;
   try {
     const url = new URL(reference.openUrl);
-    url.searchParams.set("download", reference.fileName ?? reference.title);
+    url.searchParams.set("disposition", "attachment");
     return url.toString();
   } catch {
     return reference.openUrl;
@@ -1572,6 +1573,25 @@ function SubmissionView({
     );
   };
 
+  const clearLocalDraft = () => {
+    window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+    try {
+      window.sessionStorage.removeItem(SUBMISSION_ATTEMPT_KEY);
+    } catch {
+      // Clearing the visible draft must still work when session storage is restricted.
+    }
+    submissionAttemptRef.current = null;
+    setForm(EMPTY_FORM);
+    setReferenceFiles([]);
+    setUploadProgress({});
+    setUploadMessage("");
+    setFileInputKey((current) => current + 1);
+    setErrors([]);
+    setSavedReference("");
+    setLastSubmittedAt(null);
+    onSaved("Local draft cleared from this device.");
+  };
+
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     void submit();
@@ -1933,8 +1953,11 @@ function SubmissionView({
           </fieldset>
 
           <div className="form-actions">
-            <div><span>Local draft</span><small>Saved only on this device until submitted</small></div>
-            <button className="secondary-action" type="button" onClick={saveLocalDraft} disabled={isSaving}>Save draft</button>
+            <div className="form-draft-summary"><span>Local draft</span><small>Saved only on this device until submitted</small></div>
+            <div className="form-draft-actions">
+              <button className="secondary-action" type="button" onClick={saveLocalDraft} disabled={isSaving}>Save draft</button>
+              <button className="secondary-action" type="button" onClick={clearLocalDraft} disabled={isSaving}>Clear draft</button>
+            </div>
             <button className="primary-action" type="submit" disabled={isSaving}>{isSaving ? "Saving…" : "Submit for verification"} <span>↗</span></button>
           </div>
         </form>
@@ -1958,7 +1981,45 @@ function AdminReferenceCard({
   const [externalUrl, setExternalUrl] = useState(reference.externalUrl ?? "");
   const [isVisible, setIsVisible] = useState(reference.isVisible);
   const [isSaving, setIsSaving] = useState(false);
+  const [isOpening, setIsOpening] = useState(false);
   const [error, setError] = useState("");
+
+  const openReference = async () => {
+    if (reference.kind === "link") {
+      window.open(reference.openUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!capability) return;
+
+    const pendingWindow = window.open("about:blank", "_blank");
+    if (pendingWindow) pendingWindow.opener = null;
+    setIsOpening(true);
+    setError("");
+    try {
+      const file = await fetchAdminReferenceFile(capability, reference.id);
+      const objectUrl = URL.createObjectURL(file);
+      if (pendingWindow) {
+        pendingWindow.location.replace(objectUrl);
+      } else {
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (openError) {
+      pendingWindow?.close();
+      if (onCapabilityError(openError)) return;
+      setError(
+        openError instanceof Error && openError.message
+          ? openError.message
+          : "This reference could not be opened.",
+      );
+    } finally {
+      setIsOpening(false);
+    }
+  };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -2002,9 +2063,14 @@ function AdminReferenceCard({
       <div className="admin-reference-heading">
         <span>{referenceMeta(reference)}</span>
         {reference.openUrl && (
-          <a href={reference.openUrl} target="_blank" rel="noopener noreferrer">
-            Open reference ↗
-          </a>
+          <button
+            className="admin-reference-open"
+            type="button"
+            disabled={isOpening || (reference.kind !== "link" && !capability)}
+            onClick={() => void openReference()}
+          >
+            {isOpening ? "Opening…" : "Open reference ↗"}
+          </button>
         )}
       </div>
       <form className="admin-reference-form" onSubmit={save}>

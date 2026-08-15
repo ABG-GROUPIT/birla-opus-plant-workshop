@@ -1,0 +1,5 @@
+[functions.workshop-reference-access]
+# Public presentation requests do not carry a user JWT. The function performs
+# its own database authorization for every request before reading Storage.
+verify_jwt = false
+

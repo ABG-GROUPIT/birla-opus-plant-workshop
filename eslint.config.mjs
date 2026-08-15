@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     ".vinext/**",
     ".wrangler/**",
     "outputs/**",
+    "supabase/functions/**",
     "next-env.d.ts",
   ]),
 ]);

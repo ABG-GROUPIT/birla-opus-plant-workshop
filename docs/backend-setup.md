@@ -5,6 +5,13 @@ submission, admin edit, approval, rejection, and audit entry. There is no
 ephemeral production fallback and there are no browser-facing Next.js API
 routes.
 
+Uploaded reference files are private Supabase Storage objects. The
+`workshop-reference-access` Supabase Edge Function revalidates presentation
+visibility or the existing admin capability on every read, then streams the
+object with `Cache-Control: private, no-store`. Its Supabase-managed
+administrative client stays inside the function and never enters the static
+bundle.
+
 ## Architecture and trust boundary
 
 The static browser bundle uses the Supabase project URL and publishable key to
@@ -19,6 +26,9 @@ call only these PostgREST RPC functions:
 | `workshop_admin_list(p_capability)` | Load the review queue | Validates the admin capability before returning full review data |
 | `workshop_admin_single_use_case_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency |
 | `workshop_admin_reference_update(...)` | Review one reference | Lets an administrator correct its title/link or exclude it from the presentation |
+
+`public.workshop_reference_access(...)` is intentionally executable only by
+the service role used inside the Edge Function. It is not a browser RPC.
 
 The tables do not grant direct access to `anon` or `authenticated`. The RPCs are
 `SECURITY DEFINER` functions with a restricted search path and narrowly scoped
@@ -46,6 +56,7 @@ workflow:
 4. [`202607160004_single_use_case_head_office.sql`](../supabase/migrations/202607160004_single_use_case_head_office.sql)
 5. [`202607160005_excel_batch_import.sql`](../supabase/migrations/202607160005_excel_batch_import.sql)
 6. [`202608150006_idempotent_form_submission.sql`](../supabase/migrations/202608150006_idempotent_form_submission.sql)
+7. [`202608150007_private_reference_delivery.sql`](../supabase/migrations/202608150007_private_reference_delivery.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
@@ -66,17 +77,38 @@ payload digest, and a transaction-serialized submit RPC. Replaying the same key
 with the same content returns the original response; reusing it for different
 content fails closed.
 
+The seventh migration makes the reference bucket private and adds the
+service-role-only authorization RPC used by revocable reference delivery.
+
+After migration 007, deploy the Edge Function from the repository root:
+
+```text
+supabase functions deploy workshop-reference-access --project-ref YOUR_PROJECT_REF
+```
+
+The checked-in `supabase/config.toml` also records `verify_jwt = false` because
+public presentation links have no user JWT. This does not make files public:
+the function invokes the database authorization RPC before every Storage read.
+
+For a live cutover, deploy the Edge Function first, deploy the matching GitHub
+Pages bundle second, and apply migration 007 immediately after the Pages health
+check. Do not flip the bucket first: the previously deployed browser still uses
+the old public-object URL. If the Pages deployment fails, leave migration 007
+unapplied and fix or roll back the browser bundle. Once migration 007 is live,
+roll forward by repairing/redeploying the function or browser; do not make the
+bucket public again as a routine rollback because that reopens known-URL access.
+
 The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying all six migrations, confirm that:
+After applying all seven migrations and deploying the Edge Function, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
 - the intended `public.workshop_*` RPC functions exist;
 - `anon` cannot select, insert, or update either table directly; and
 - `anon` can execute only the intended RPC functions;
-- `storage.buckets` contains `workshop-references` with a 10 MiB per-file cap;
+- `storage.buckets` contains private bucket `workshop-references` with a 10 MiB per-file cap;
 - anonymous uploads fail unless the object path contains an active media-session
   ID and its matching raw capability; and
 - the upload session becomes unusable after submission or one hour.
@@ -118,6 +150,10 @@ PostgREST RPC calls send the publishable key in the `apikey` header. Standard
 file uploads send that same browser-safe key as both `apikey` and Bearer
 authorization to `https://<PROJECT_REF>.supabase.co/storage/v1/object/...`.
 They do not send a secret key, service-role key, or database password.
+Reference reads use
+`https://<PROJECT_REF>.supabase.co/functions/v1/workshop-reference-access`;
+public reads carry only a reference ID, while admin reads send the raw admin
+capability in a POST body. Neither path exposes a privileged Supabase key.
 
 ## 3. Use the complete admin capability link
 
@@ -199,12 +235,17 @@ panel to verify the complete upload chain:
    `401` or `403`.
 4. `POST /rest/v1/rpc/workshop_submit_single_use_case_idempotent` succeeds,
    and the new response and file appear in the admin review queue.
-5. Approve the response and confirm the presentation opens the included file.
+5. Approve the response and confirm the presentation opens the included file
+   through `/functions/v1/workshop-reference-access`, not a
+   `/storage/v1/object/public/` URL.
+6. Hide the file or reject the response, then retry the same function URL and
+   confirm it returns `404`; the admin POST path should still open the file with
+   the valid capability.
 
 Only the migration's capability-checked `INSERT` policy should exist for these
-anonymous Storage uploads; a `SELECT` policy is neither created nor required by
-this object-upload flow. A successful live upload with the publishable key while no
-Storage `SELECT` policy exists is the final production check of that assumption.
+anonymous Storage uploads; a browser `SELECT` policy is neither created nor
+required. The private Edge Function reads with its server-side service role only
+after the access RPC authorizes the current reference state.
 The one-hour capability/RLS design intentionally does not use signed-upload
 tokens or an `x-signature` header.
 
