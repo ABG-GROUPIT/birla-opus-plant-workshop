@@ -11,13 +11,14 @@
     "start": "next start",
     "test": "npm run build && node --experimental-strip-types --test",
     "lint": "eslint . --ignore-pattern .next",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "workbook:import": "node scripts/import-workbook.mjs"
   },
   "dependencies": {
-    "next": "16.2.6",
+    "@e965/xlsx": "0.20.3",
+    "next": "16.3.1",
     "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "tus-js-client": "^4.3.1"
+    "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
@@ -25,7 +26,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.3.1",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3"
   },

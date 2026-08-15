@@ -779,6 +779,17 @@ a:focus-visible,
   opacity: 0.52;
 }
 
+.hero-controls button.hero-print-action {
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  padding: 0 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  width: auto;
+}
+
 .response-stage {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(360px, 0.8fr);
@@ -2353,6 +2364,11 @@ a:focus-visible,
   opacity: 1;
 }
 
+.review-filters button.end-admin-session {
+  color: #8a3144;
+  margin-left: auto;
+}
+
 .review-layout {
   display: grid;
   gap: 14px;
@@ -3393,5 +3409,135 @@ a:focus-visible,
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@page {
+  margin: 10mm;
+  size: landscape;
+}
+
+@media print {
+  html,
+  body,
+  .app-shell {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .presentation-index,
+  .plant-presentation {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .presentation-sync button,
+  .presentation-print-action,
+  .hero-controls,
+  .back-link,
+  .response-navigation,
+  .reference-trigger,
+  .reference-dialog {
+    display: none !important;
+  }
+
+  .presentation-index {
+    min-height: 0;
+    padding: 8mm;
+  }
+
+  .presentation-brandline {
+    margin-bottom: 6mm;
+  }
+
+  .presentation-intro {
+    gap: 12mm;
+    margin-bottom: 8mm;
+  }
+
+  .presentation-intro h1 {
+    font-size: 48pt;
+  }
+
+  .plant-grid {
+    gap: 3mm;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .plant-tile {
+    break-inside: avoid;
+    min-height: 42mm;
+  }
+
+  .plant-presentation {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .plant-hero {
+    break-after: avoid;
+    height: 50mm;
+    min-height: 50mm;
+  }
+
+  .response-stage.response-stage-compact {
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    grid-template-rows: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .response-facts,
+  .selected-use-case,
+  .expected-benefits-panel {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .response-facts {
+    grid-template-rows: auto auto;
+  }
+
+  .selected-use-case {
+    grid-template-rows: auto auto auto;
+  }
+
+  .expected-benefits-panel {
+    grid-template-rows: auto auto auto;
+    padding-bottom: 5mm;
+  }
+
+  .presentation-scroll-frame,
+  .presentation-scroll-frame > [data-presentation-scroll],
+  .selected-use-case-description,
+  .expected-benefits-copy {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    overscroll-behavior: auto;
+    scrollbar-gutter: auto;
+  }
+
+  .selected-use-case-description {
+    font-size: 11pt;
+    padding-right: 0;
+  }
+
+  .expected-benefits-copy blockquote,
+  .expected-benefits-copy blockquote.medium-copy,
+  .expected-benefits-copy blockquote.long-copy,
+  .expected-benefits-copy blockquote.very-long-copy {
+    font-size: 15pt;
   }
 }

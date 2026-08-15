@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export const WORKBOOK_VALUE_STREAMS = Object.freeze([
   "Productivity",
   "Quality",
@@ -9,8 +11,7 @@ export const WORKBOOK_VALUE_STREAMS = Object.freeze([
   "Supply Chain",
 ]);
 
-const SHEET_PLANTS = new Map(
-  [
+export const WORKBOOK_SHEET_BINDINGS = Object.freeze([
     ["Panipat (Haryana)", "Panipat"],
     ["Ludhiana (Punjab)", "Ludhiana"],
     ["Cheyyar (Tamil Nadu)", "Cheyyar"],
@@ -18,8 +19,32 @@ const SHEET_PLANTS = new Map(
     ["Mahad (Maharashtra)", "Mahad"],
     ["Kharagpur (West Bengal)", "Kharagpur"],
     ["Mumbai (Head Office)", "Head Office (Mumbai)"],
-  ].map(([sheet, plant]) => [normaliseKeyPart(sheet), plant]),
+]);
+
+const SHEET_PLANTS = new Map(
+  WORKBOOK_SHEET_BINDINGS.map(([sheet, plant]) => [normaliseKeyPart(sheet), plant]),
 );
+
+const PLANT_SOURCE_SLUGS = new Map([
+  ["Panipat", "panipat"],
+  ["Ludhiana", "ludhiana"],
+  ["Cheyyar", "cheyyar"],
+  ["Chamarajanagar", "chamarajanagar"],
+  ["Mahad", "mahad"],
+  ["Kharagpur", "kharagpur"],
+  ["Head Office (Mumbai)", "head-office-mumbai"],
+]);
+
+export const WORKBOOK_NORMALIZATION_VERSION = "excel-v1.1";
+
+const WORKBOOK_HEADER_ALIASES = Object.freeze([
+  new Set(["sr no", "serial no", "serial number"]),
+  new Set(["name", "leader name"]),
+  new Set(["use case theme", "use case theme 100 charac", "use case title"]),
+  new Set(["use case description", "use case theme description"]),
+  new Set(["value streams", "value streams please select drop down", "value stream"]),
+  new Set(["expected benefits", "expected benefit"]),
+]);
 
 const VALUE_STREAM_LOOKUP = new Map(
   WORKBOOK_VALUE_STREAMS.map((stream) => [normaliseKeyPart(stream), stream]),
@@ -57,18 +82,11 @@ function normaliseKeyPart(value) {
     .replace(/\s+/g, " ");
 }
 
-function sourceSlug(value) {
-  return normaliseKeyPart(value).replace(/\s+/g, "-");
-}
-
-function looksLikeContributor(value) {
-  const text = cellText(value);
-  if (!text || text.length > 60 || /\d|[:;!?]/u.test(text)) return false;
-
-  const words = text.split(/\s+/u);
-  if (words.length < 1 || words.length > 5) return false;
-
-  return words.every((word) => /^[\p{L}][\p{L}.']*$/u.test(word));
+function asciiSourceSlug(value) {
+  return cellText(value)
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLocaleLowerCase("en-IN");
 }
 
 function combineWithoutOverlap(first, second) {
@@ -106,6 +124,59 @@ function canonicalValueStream(value) {
   return VALUE_STREAM_LOOKUP.get(normaliseKeyPart(value)) ?? null;
 }
 
+export function validateWorkbookSchema(sheets) {
+  const errors = [];
+  const warnings = [];
+  const recognized = new Map();
+
+  for (const sheet of sheets) {
+    const sheetName = cellText(sheet?.name);
+    const key = normaliseKeyPart(sheetName);
+    if (!SHEET_PLANTS.has(key)) {
+      warnings.push(`Ignored unrecognised sheet “${sheetName || "Untitled"}”.`);
+      continue;
+    }
+    if (recognized.has(key)) {
+      errors.push(`Workbook contains the required sheet “${sheetName}” more than once.`);
+      continue;
+    }
+    recognized.set(key, sheet);
+
+    if (Number(sheet?.hidden ?? 0) !== 0) {
+      errors.push(`Required sheet “${sheetName}” must be visible.`);
+    }
+    const header = Array.isArray(sheet?.values?.[0]) ? sheet.values[0] : [];
+    WORKBOOK_HEADER_ALIASES.forEach((aliases, index) => {
+      const normalized = normaliseKeyPart(header[index]);
+      if (!aliases.has(normalized)) {
+        errors.push(
+          `Sheet “${sheetName}” column ${index + 1} has an unsupported header.`,
+        );
+      }
+    });
+    if (header.slice(6).some((value) => cellText(value))) {
+      errors.push(`Sheet “${sheetName}” contains unexpected populated columns after column F.`);
+    }
+    if (
+      (sheet?.values ?? []).slice(1).some((row) =>
+        (Array.isArray(row) ? row : []).slice(6).some((value) => cellText(value)),
+      )
+    ) {
+      errors.push(
+        `Sheet "${sheetName}" contains populated response cells after column F.`,
+      );
+    }
+  }
+
+  for (const [requiredSheet] of WORKBOOK_SHEET_BINDINGS) {
+    if (!recognized.has(normaliseKeyPart(requiredSheet))) {
+      errors.push(`Workbook is missing required sheet “${requiredSheet}”.`);
+    }
+  }
+
+  return { errors, warnings };
+}
+
 export function inferValueStream(title, description, expectedBenefits) {
   const weightedFields = [
     [normaliseKeyPart(title), 3],
@@ -135,7 +206,14 @@ function meaningfulResponseCells(row) {
   return row.slice(1, 6).some((value) => cellText(value).length > 0);
 }
 
-function parseResponseRow({ plant, sheetName, row, rowIndex }) {
+function rawColumnsHash(row) {
+  const canonical = JSON.stringify(
+    Array.from({ length: 6 }, (_, index) => cellText(row[index])),
+  );
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function parseResponseRow({ plant, sheetName, row, rowIndex, layout }) {
   const serial = cellText(row[0]);
   const nameColumn = cellText(row[1]);
   const themeColumn = cellText(row[2]);
@@ -148,10 +226,7 @@ function parseResponseRow({ plant, sheetName, row, rowIndex }) {
     warnings.push("The row has no Sr No.; it cannot receive a stable import identity.");
   }
 
-  const panipatShiftedLayout =
-    plant === "Panipat" &&
-    nameColumn.length > 0 &&
-    !looksLikeContributor(nameColumn);
+  const panipatShiftedLayout = plant === "Panipat" && layout === "shifted";
 
   let submitterName;
   let rawTitle;
@@ -181,7 +256,7 @@ function parseResponseRow({ plant, sheetName, row, rowIndex }) {
 
   if (valueStreamInferred) {
     const reason = rawValueStream
-      ? `“${rawValueStream}” is not one of the eight workbook options`
+      ? "the workbook value-stream cell was not one of the eight supported options"
       : "the workbook value-stream cell was blank";
     warnings.push(`${reason}; “${valueStream}” was inferred from the use-case wording.`);
   }
@@ -192,9 +267,19 @@ function parseResponseRow({ plant, sheetName, row, rowIndex }) {
   if (!valueStream) missingFields.push("valueStream");
   if (!expectedBenefits) missingFields.push("expectedBenefits");
 
-  const sourceKey = serial
-    ? `excel-v1|${sourceSlug(plant)}|${sourceSlug(serial)}`
+  const sourceSerialSlug = asciiSourceSlug(serial);
+  const plantSlug = PLANT_SOURCE_SLUGS.get(plant) ?? "";
+  const sourceKey = sourceSerialSlug && plantSlug
+    ? `excel-v1|${plantSlug}|${sourceSerialSlug}`
     : "";
+  if (!sourceKey && !missingFields.includes("sourceKey")) {
+    missingFields.push("sourceKey");
+  }
+  if (serial && !sourceSerialSlug) {
+    warnings.push(
+      "The Sr No. has no ASCII letters or digits, so it cannot receive the database-compatible import identity.",
+    );
+  }
   const businessKey = [plant, submitterName, titleResult.title]
     .map(normaliseKeyPart)
     .join("|");
@@ -211,6 +296,10 @@ function parseResponseRow({ plant, sheetName, row, rowIndex }) {
     useCaseDescription: titleResult.description,
     valueStream,
     valueStreamInferred,
+    rawValueStream,
+    normalizationVersion: WORKBOOK_NORMALIZATION_VERSION,
+    layoutKind: panipatShiftedLayout ? "shifted" : "standard",
+    rawColumnsSha256: rawColumnsHash(row),
     expectedBenefits,
     complete: Boolean(sourceKey) && missingFields.length === 0,
     missingFields,
@@ -218,9 +307,15 @@ function parseResponseRow({ plant, sheetName, row, rowIndex }) {
   };
 }
 
-export function parseWorkbookSheets(sheets) {
+export function parseWorkbookSheets(sheets, options = {}) {
   const entries = [];
   const workbookWarnings = [];
+  const workbookErrors = [];
+  const panipatLayout = options.panipatLayout ?? null;
+
+  if (panipatLayout !== null && !["standard", "shifted"].includes(panipatLayout)) {
+    throw new Error("panipatLayout must be either standard or shifted.");
+  }
 
   for (const sheet of sheets) {
     const sheetName = cellText(sheet?.name);
@@ -231,6 +326,14 @@ export function parseWorkbookSheets(sheets) {
     }
 
     const rows = Array.isArray(sheet?.values) ? sheet.values : [];
+    const meaningfulRows = rows.slice(1).filter((row) =>
+      meaningfulResponseCells(Array.isArray(row) ? row : []),
+    );
+    if (plant === "Panipat" && meaningfulRows.length > 0 && !panipatLayout) {
+      workbookErrors.push(
+        "The populated Panipat sheet requires an explicit layout decision. Rerun with --panipat-layout standard for the documented A-F template or --panipat-layout shifted for the known legacy shifted rows.",
+      );
+    }
     rows.slice(1).forEach((row, offset) => {
       const cells = Array.isArray(row) ? row : [];
       if (!meaningfulResponseCells(cells)) return;
@@ -240,6 +343,7 @@ export function parseWorkbookSheets(sheets) {
           sheetName,
           row: cells,
           rowIndex: offset + 1,
+          layout: plant === "Panipat" ? (panipatLayout ?? "standard") : "standard",
         }),
       );
     });
@@ -250,7 +354,69 @@ export function parseWorkbookSheets(sheets) {
     publishableEntries: entries.filter((entry) => entry.complete),
     incompleteEntries: entries.filter((entry) => !entry.complete),
     workbookWarnings,
+    workbookErrors,
   };
+}
+
+export function validateImportEntries(entries) {
+  const errors = [];
+  const duplicateKeys = new Set();
+  const seenKeys = new Set();
+
+  entries.forEach((entry, index) => {
+    const position = index + 1;
+    const fields = [
+      ["sourceSheet", entry.sourceSheet, 120],
+      ["sourceSerial", entry.sourceSerial, 80],
+      ["submitterName", entry.submitterName, 120],
+      ["submitterEmail", entry.submitterEmail ?? "", 254],
+      ["designation", entry.designation ?? "", 160],
+      ["useCaseTitle", entry.useCaseTitle, 200],
+      ["useCaseDescription", entry.useCaseDescription, 12000],
+      ["expectedBenefits", entry.expectedBenefits, 12000],
+    ];
+    for (const [name, value, limit] of fields) {
+      if (cellText(value).length > limit) {
+        errors.push(`Entry ${position} field ${name} exceeds ${limit} characters.`);
+      }
+    }
+    if (
+      entry.submitterEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(entry.submitterEmail)
+    ) {
+      errors.push(`Entry ${position} contains an invalid optional work email.`);
+    }
+    if (!WORKBOOK_VALUE_STREAMS.includes(entry.valueStream)) {
+      errors.push(`Entry ${position} does not contain one canonical value stream.`);
+    }
+    if (!Number.isInteger(entry.sourceRow) || entry.sourceRow < 1 || entry.sourceRow > 9_999_999) {
+      errors.push(`Entry ${position} has an invalid physical source row.`);
+    }
+    const key = cellText(entry.sourceKey).toLocaleLowerCase("en-IN");
+    if (key) {
+      if (seenKeys.has(key)) duplicateKeys.add(key);
+      seenKeys.add(key);
+    }
+
+    const payloadBytes = Buffer.byteLength(
+      JSON.stringify(toImportPayloadEntry(entry)),
+      "utf8",
+    );
+    if (payloadBytes > 65_536) {
+      errors.push(`Entry ${position} source provenance exceeds 64 KiB.`);
+    }
+  });
+
+  for (const key of duplicateKeys) {
+    errors.push(`Workbook payload contains a duplicate source key: ${key}.`);
+  }
+
+  const rows = entries.map(toImportPayloadEntry);
+  if (Buffer.byteLength(JSON.stringify(rows), "utf8") > 5 * 1024 * 1024) {
+    errors.push("The normalized workbook payload exceeds the database 5 MiB limit.");
+  }
+
+  return { errors };
 }
 
 /** Keep the CLI payload contract aligned with the atomic Supabase import worker. */

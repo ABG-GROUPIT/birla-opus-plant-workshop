@@ -10,6 +10,7 @@ import {
   submitWorkshopResponse,
   updateAdminReference,
   updateAdminSubmission,
+  uploadReferenceFile,
 } from "../lib/browser-submission-api.ts";
 
 const originalEnvironment = {
@@ -138,6 +139,7 @@ test("submits one named use case and value stream through the references-aware R
   }, 201);
 
   const result = await submitWorkshopResponse({
+    clientSubmissionId: "3c92ae24-99dc-4f3f-b462-ed96583493be",
     plant: "Panipat",
     submitterName: "Plant leader",
     submitterEmail: "leader@example.com",
@@ -157,9 +159,10 @@ test("submits one named use case and value stream through the references-aware R
   });
   assert.equal(
     requests[0].input,
-    "https://example.supabase.co/rest/v1/rpc/workshop_submit_single_use_case_with_references",
+    "https://example.supabase.co/rest/v1/rpc/workshop_submit_single_use_case_idempotent",
   );
   assert.deepEqual(JSON.parse(requests[0].init.body), {
+    p_client_submission_id: "3c92ae24-99dc-4f3f-b462-ed96583493be",
     p_plant: "Panipat",
     p_submitter_name: "Plant leader",
     p_submitter_email: "leader@example.com",
@@ -177,6 +180,7 @@ test("submits one named use case and value stream through the references-aware R
 test("rejects zero or multiple value streams before making a request", async (t) => {
   const requests = captureFetch(t, {});
   const baseInput = {
+    clientSubmissionId: "3c92ae24-99dc-4f3f-b462-ed96583493be",
     plant: "Panipat",
     submitterName: "Plant leader",
     submitterEmail: "leader@example.com",
@@ -218,7 +222,7 @@ test("creates and parses a media upload session", async (t) => {
   assert.deepEqual(JSON.parse(requests[0].init.body), {});
 });
 
-test("uses the direct Storage TUS endpoint and browser-safe upload headers", () => {
+test("uses the project-host Storage endpoint and browser-safe upload headers", () => {
   const transport = referenceUploadTransport({
     sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
     uploadToken: "unguessable-media-token",
@@ -226,7 +230,8 @@ test("uses the direct Storage TUS endpoint and browser-safe upload headers", () 
   }, 2);
 
   assert.deepEqual(transport, {
-    endpoint: "https://example.storage.supabase.co/storage/v1/upload/resumable",
+    endpoint:
+      "https://example.supabase.co/storage/v1/object/workshop-references/c1a68276-3d94-48e3-849b-dc63add47d94/unguessable-media-token/2",
     headers: {
       apikey: "sb_publishable_browser_safe",
       authorization: "Bearer sb_publishable_browser_safe",
@@ -250,6 +255,84 @@ test("rejects upload slots outside the three capability-scoped paths", () => {
   );
 });
 
+test("uploads a small reference through the allowed project host with progress", async (t) => {
+  const requests = [];
+  const originalXmlHttpRequest = globalThis.XMLHttpRequest;
+
+  class EventTargetStub {
+    listeners = new Map();
+
+    addEventListener(name, listener) {
+      this.listeners.set(name, listener);
+    }
+
+    emit(name, event = {}) {
+      this.listeners.get(name)?.(event);
+    }
+  }
+
+  class XmlHttpRequestStub extends EventTargetStub {
+    upload = new EventTargetStub();
+    headers = {};
+    status = 0;
+
+    open(method, endpoint) {
+      this.method = method;
+      this.endpoint = endpoint;
+    }
+
+    setRequestHeader(name, value) {
+      this.headers[name] = value;
+    }
+
+    send(body) {
+      requests.push({
+        method: this.method,
+        endpoint: this.endpoint,
+        headers: this.headers,
+        body,
+      });
+      this.upload.emit("progress", {
+        lengthComputable: true,
+        loaded: body.size,
+        total: body.size,
+      });
+      this.status = 200;
+      this.emit("load");
+    }
+  }
+
+  globalThis.XMLHttpRequest = XmlHttpRequestStub;
+  t.after(() => {
+    globalThis.XMLHttpRequest = originalXmlHttpRequest;
+  });
+
+  const progress = [];
+  const file = new File(["fictional PDF bytes"], "demo-reference.pdf", {
+    type: "application/pdf",
+    lastModified: 1_786_800_000_000,
+  });
+  const manifest = await uploadReferenceFile({
+    sessionId: "c1a68276-3d94-48e3-849b-dc63add47d94",
+    uploadToken: "unguessable-media-token",
+    expiresAt: "2026-08-15T14:00:00.000Z",
+  }, file, 1, (value) => progress.push(value));
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "POST");
+  assert.equal(
+    requests[0].endpoint,
+    "https://example.supabase.co/storage/v1/object/workshop-references/c1a68276-3d94-48e3-849b-dc63add47d94/unguessable-media-token/1",
+  );
+  assert.equal(requests[0].headers.apikey, "sb_publishable_browser_safe");
+  assert.equal(requests[0].headers.authorization, "Bearer sb_publishable_browser_safe");
+  assert.equal(requests[0].headers["content-type"], "application/pdf");
+  assert.equal(requests[0].headers["x-upsert"], "false");
+  assert.deepEqual(progress, [1, 1]);
+  assert.equal(manifest.objectPath, "c1a68276-3d94-48e3-849b-dc63add47d94/unguessable-media-token/1");
+  assert.equal(manifest.kind, "pdf");
+});
+
 test("submits link and uploaded-file manifests with the media capability", async (t) => {
   const requests = captureFetch(t, {
     submission: {
@@ -260,6 +343,7 @@ test("submits link and uploaded-file manifests with the media capability", async
   });
 
   await submitWorkshopResponse({
+    clientSubmissionId: "3c92ae24-99dc-4f3f-b462-ed96583493be",
     plant: "Panipat",
     submitterName: "Plant leader",
     submitterEmail: "leader@example.com",

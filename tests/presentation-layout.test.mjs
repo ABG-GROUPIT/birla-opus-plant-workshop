@@ -69,3 +69,18 @@ test("provides independent readable regions for long workbook copy", async () =>
   assert.match(css, /minmax\(160px, min\(38vh, 280px\)\)/);
   assert.match(css, /max-height:\s*52vh;/);
 });
+
+test("offers print or PDF export without clipping long presentation copy", async () => {
+  const [canvas, css] = await Promise.all([
+    readFile(canvasUrl, "utf8"),
+    readFile(cssUrl, "utf8"),
+  ]);
+
+  assert.match(canvas, /const printPresentation = useCallback\(\(\) => window\.print\(\), \[\]\)/);
+  assert.equal((canvas.match(/Print \/ Save PDF/g) ?? []).length, 2);
+  assert.match(css, /@page\s*\{[\s\S]*?size:\s*landscape;/);
+  assert.match(css, /@media print\s*\{/);
+  assert.match(css, /\.presentation-print-action,[\s\S]*?\.response-navigation,[\s\S]*?display:\s*none !important;/);
+  assert.match(css, /\.presentation-scroll-frame > \[data-presentation-scroll\],[\s\S]*?max-height:\s*none !important;[\s\S]*?overflow:\s*visible !important;/);
+  assert.match(css, /\.plant-presentation\s*\{[\s\S]*?height:\s*auto;[\s\S]*?overflow:\s*visible;/);
+});

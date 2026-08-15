@@ -44,6 +44,8 @@ workflow:
 2. [`202607160002_static_browser_rpc.sql`](../supabase/migrations/202607160002_static_browser_rpc.sql)
 3. [`202607160003_reference_media.sql`](../supabase/migrations/202607160003_reference_media.sql)
 4. [`202607160004_single_use_case_head_office.sql`](../supabase/migrations/202607160004_single_use_case_head_office.sql)
+5. [`202607160005_excel_batch_import.sql`](../supabase/migrations/202607160005_excel_batch_import.sql)
+6. [`202608150006_idempotent_form_submission.sql`](../supabase/migrations/202608150006_idempotent_form_submission.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
@@ -55,13 +57,20 @@ metadata, restricted anonymous uploads, admin reference controls, and reference
 fields in the public/admin response envelopes. The fourth migration adds the
 Head Office (Mumbai) entity, one freehand use-case title and theme, single-use-
 case browser/admin RPCs, legacy synchronization, and plant/use-case ordering for
-the presentation.
+the presentation. The fifth migration establishes the eight named value
+streams, aligns long-text limits at 12,000 characters, adds Excel source
+lineage, checksum/idempotency controls, atomic batch receipts, and the
+capability-protected Excel import RPC.
+The sixth migration adds an unguessable client retry key, a server-computed
+payload digest, and a transaction-serialized submit RPC. Replaying the same key
+with the same content returns the original response; reusing it for different
+content fails closed.
 
 The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying all four migrations, confirm that:
+After applying all six migrations, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
 - the intended `public.workshop_*` RPC functions exist;
@@ -71,6 +80,11 @@ After applying all four migrations, confirm that:
 - anonymous uploads fail unless the object path contains an active media-session
   ID and its matching raw capability; and
 - the upload session becomes unusable after submission or one hour.
+- `workshop_private.excel_import_batches` exists and
+  `workshop_admin_excel_batch_import(...)` is executable only through the
+  capability-gated wrapper intended by migration 005.
+- `workshop_submit_single_use_case_idempotent(...)` is executable by `anon`,
+  while the retry-key columns remain inaccessible through direct table access.
 
 ### Reference-media limits
 
@@ -81,11 +95,12 @@ After applying all four migrations, confirm that:
 - Legacy or macro-enabled Office files, archives, HTML/SVG, audio/video, and
   executables are rejected.
 
-The browser uses resumable uploads, so the textual response remains lightweight
-and larger workshop documents can retry interrupted chunks. Links consume no
-Storage quota. Supabase Free currently provides 1 GB file storage and allows up
-to 50 MB per individual file; this application intentionally stays below those
-platform limits.
+The browser sends each selected file through Supabase's standard object endpoint
+on the same project host used by the form. This avoids corporate-network blocks
+on the optional dedicated Storage hostname. Links consume no Storage quota.
+Supabase Free currently provides 1 GB file storage and allows up to 50 MB per
+individual file; this application intentionally stays at 10 MiB per file and
+25 MiB per response.
 
 ## 2. Configure the browser-safe Supabase values
 
@@ -99,9 +114,9 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_BASE_PATH=
 ```
 
-PostgREST RPC calls send the publishable key in the `apikey` header. Resumable
+PostgREST RPC calls send the publishable key in the `apikey` header. Standard
 file uploads send that same browser-safe key as both `apikey` and Bearer
-authorization to the direct `https://<PROJECT_REF>.storage.supabase.co` host.
+authorization to `https://<PROJECT_REF>.supabase.co/storage/v1/object/...`.
 They do not send a secret key, service-role key, or database password.
 
 ## 3. Use the complete admin capability link
@@ -175,20 +190,20 @@ panel to verify the complete upload chain:
 
 1. `POST /rest/v1/rpc/workshop_media_session_create` returns `sessionId`,
    `uploadToken`, and `expiresAt`.
-2. The TUS create request goes to
-   `https://<PROJECT_REF>.storage.supabase.co/storage/v1/upload/resumable` with
+2. The object upload request goes to
+   `https://<PROJECT_REF>.supabase.co/storage/v1/object/workshop-references/...` with
    `apikey: sb_publishable_...` and
    `Authorization: Bearer sb_publishable_...`. It must not contain a secret or
    service-role key.
-3. The create request returns `201`, subsequent TUS `PATCH` requests return
-   `204`, and no request returns `401` or `403`.
-4. `POST /rest/v1/rpc/workshop_submit_single_use_case_with_references` succeeds,
+3. The upload returns `200` or another `2xx` status, and no request returns
+   `401` or `403`.
+4. `POST /rest/v1/rpc/workshop_submit_single_use_case_idempotent` succeeds,
    and the new response and file appear in the admin review queue.
 5. Approve the response and confirm the presentation opens the included file.
 
 Only the migration's capability-checked `INSERT` policy should exist for these
 anonymous Storage uploads; a `SELECT` policy is neither created nor required by
-this TUS flow. A successful live upload with the publishable key while no
+this object-upload flow. A successful live upload with the publishable key while no
 Storage `SELECT` policy exists is the final production check of that assumption.
 The one-hour capability/RLS design intentionally does not use signed-upload
 tokens or an `x-signature` header.
@@ -207,3 +222,10 @@ Supabase is the authoritative store. The previous server-side webhook mirror is
 not part of the static RPC request path. If a Sheet mirror is required later,
 implement it from Supabase with a database webhook or an Edge Function so Sheet
 latency cannot delay or roll back the leader's submission.
+
+## Excel operator boundary
+
+The local Excel operator flow is documented separately in
+[Excel workbook import](excel-import.md). Its admin capability belongs only in
+a private operator environment and must never be placed in `.env.local`, a
+`NEXT_PUBLIC_` variable, GitHub Actions, the repository, or a shared report.
