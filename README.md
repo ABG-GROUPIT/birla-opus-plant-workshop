@@ -145,3 +145,5 @@ The workflow has defaults for the repository base path and canonical Pages URL.
 They can be overridden with `NEXT_PUBLIC_BASE_PATH` and `NEXT_PUBLIC_SITE_URL`.
 Do not add the raw admin capability or a Supabase secret/service-role key to the
 workflow. GitHub Pages is the only deployment target for this workshop build.
+The checked-in `vercel.json` disables automatic Vercel Git deployments so the
+legacy integration cannot create parallel preview or production builds.
