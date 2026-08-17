@@ -24,7 +24,7 @@ call only these PostgREST RPC functions:
 | `workshop_submit_single_use_case_with_references(...)` | Submit one use case and its references | Validates the title, theme, one value stream, benefits, links, actual Storage objects, count and byte limits in one transaction |
 | `workshop_submit_with_references(...)` / `workshop_submit(...)` | Compatibility submission paths | Keep already-open older form tabs working during the contract transition |
 | `workshop_admin_list(p_capability)` | Load the review queue | Validates the admin capability before returning full review data |
-| `workshop_admin_single_use_case_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency |
+| `workshop_admin_single_use_case_update(...)` | Edit, approve, or reject | Validates the capability and uses `updated_at` for optimistic concurrency; stale versions return HTTP 409 (`PT409`) without mutation |
 | `workshop_admin_reference_update(...)` | Review one reference | Lets an administrator correct its title/link or exclude it from the presentation |
 
 `public.workshop_reference_access(...)` is intentionally executable only by
@@ -58,6 +58,7 @@ workflow:
 6. [`202608150006_idempotent_form_submission.sql`](../supabase/migrations/202608150006_idempotent_form_submission.sql)
 7. [`202608150007_private_reference_delivery.sql`](../supabase/migrations/202608150007_private_reference_delivery.sql)
 8. [`202608170008_live_role_and_delete_hardening.sql`](../supabase/migrations/202608170008_live_role_and_delete_hardening.sql)
+9. [`202608170009_postgrest_conflict_hardening.sql`](../supabase/migrations/202608170009_postgrest_conflict_hardening.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
@@ -88,6 +89,12 @@ dropping or disabling their trigger bindings. On an existing project, apply it
 only after migration 007 and verify the foreign-key delete action, routine
 ACLs, and a transaction-rolled-back synthetic deletion before cleanup.
 
+The ninth migration replaces API-reachable PostgreSQL class-40 concurrency
+exceptions with PostgREST's explicit `PT409` status. A stale admin edit and the
+losing side of a concurrent Excel insertion therefore return HTTP 409 promptly,
+remain non-mutating, and are never mistaken for transaction errors that an
+intermediate layer may retry automatically.
+
 After migration 007, deploy the Edge Function from the repository root:
 
 ```text
@@ -110,7 +117,7 @@ The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying all eight migrations and deploying the Edge Function, confirm that:
+After applying all nine migrations and deploying the Edge Function, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
 - the intended `public.workshop_*` RPC functions exist;
@@ -128,6 +135,10 @@ After applying all eight migrations and deploying the Edge Function, confirm tha
 - the upload-session submission foreign key uses `ON DELETE CASCADE`; and
 - trigger-only routines are not executable by browser or service API roles,
   while the existing submission audit trigger still records row changes.
+- a stale `updated_at` admin mutation returns HTTP 409 with code `PT409` and
+  leaves the canonical row unchanged; and
+- the losing concurrent Excel insertion returns the same HTTP 409/`PT409`
+  contract without an extra submission or batch receipt.
 
 ### Reference-media limits
 
