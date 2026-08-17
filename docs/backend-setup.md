@@ -57,6 +57,7 @@ workflow:
 5. [`202607160005_excel_batch_import.sql`](../supabase/migrations/202607160005_excel_batch_import.sql)
 6. [`202608150006_idempotent_form_submission.sql`](../supabase/migrations/202608150006_idempotent_form_submission.sql)
 7. [`202608150007_private_reference_delivery.sql`](../supabase/migrations/202608150007_private_reference_delivery.sql)
+8. [`202608170008_live_role_and_delete_hardening.sql`](../supabase/migrations/202608170008_live_role_and_delete_hardening.sql)
 
 The first migration creates the submission and audit tables, validation
 constraints, indexes, audit trigger, row-level security, and direct-access
@@ -80,6 +81,13 @@ content fails closed.
 The seventh migration makes the reference bucket private and adds the
 service-role-only authorization RPC used by revocable reference delivery.
 
+The eighth migration makes consumed upload sessions follow their submission on
+deletion, avoiding the earlier `ON DELETE SET NULL`/consumption-check conflict.
+It also removes direct Data API execution from trigger-only routines without
+dropping or disabling their trigger bindings. On an existing project, apply it
+only after migration 007 and verify the foreign-key delete action, routine
+ACLs, and a transaction-rolled-back synthetic deletion before cleanup.
+
 After migration 007, deploy the Edge Function from the repository root:
 
 ```text
@@ -102,7 +110,7 @@ The admin capability is a random bearer value. Only its SHA-256 hash belongs in
 the database migration; the raw value is supplied separately. Never add the raw
 capability to SQL, Git, GitHub variables, logs, screenshots, or this guide.
 
-After applying all seven migrations and deploying the Edge Function, confirm that:
+After applying all eight migrations and deploying the Edge Function, confirm that:
 
 - `public.workshop_submissions` and `public.workshop_submission_audit` exist;
 - the intended `public.workshop_*` RPC functions exist;
@@ -117,6 +125,9 @@ After applying all seven migrations and deploying the Edge Function, confirm tha
   capability-gated wrapper intended by migration 005.
 - `workshop_submit_single_use_case_idempotent(...)` is executable by `anon`,
   while the retry-key columns remain inaccessible through direct table access.
+- the upload-session submission foreign key uses `ON DELETE CASCADE`; and
+- trigger-only routines are not executable by browser or service API roles,
+  while the existing submission audit trigger still records row changes.
 
 ### Reference-media limits
 
