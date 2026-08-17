@@ -41,9 +41,22 @@ test("converts both browser-reachable concurrency branches to explicit HTTP 409"
   );
   assert.match(conflictMigration, /http_conflict_code constant text := '''PT409'''/i);
   assert.equal(
-    [...conflictMigration.matchAll(/occurrence_count\s*<>\s*1/gi)].length,
+    [
+      ...conflictMigration.matchAll(
+        /legacy_occurrence_count\s*=\s*1\s+and\s+conflict_occurrence_count\s*=\s*0/gi,
+      ),
+    ].length,
     2,
-    "each replaced function must fail closed if its expected source drifts",
+    "each effective legacy branch must be replaced exactly once",
+  );
+  assert.equal(
+    [
+      ...conflictMigration.matchAll(
+        /legacy_occurrence_count\s*=\s*0\s+and\s+conflict_occurrence_count\s*=\s*1/gi,
+      ),
+    ].length,
+    2,
+    "an already-hardened migration rerun must be a safe no-op",
   );
   assert.equal(
     [...conflictMigration.matchAll(/execute pg_catalog\.replace\(/gi)].length,

@@ -15,7 +15,8 @@ declare
   definition text;
   legacy_code constant text := '''40001''';
   http_conflict_code constant text := '''PT409''';
-  occurrence_count integer;
+  legacy_occurrence_count integer;
+  conflict_occurrence_count integer;
 begin
   if admin_update is null then
     raise exception using
@@ -24,18 +25,26 @@ begin
   end if;
 
   definition := pg_catalog.pg_get_functiondef(admin_update);
-  occurrence_count := (
+  legacy_occurrence_count := (
     pg_catalog.char_length(definition) -
     pg_catalog.char_length(pg_catalog.replace(definition, legacy_code, ''))
   ) / pg_catalog.char_length(legacy_code);
+  conflict_occurrence_count := (
+    pg_catalog.char_length(definition) -
+    pg_catalog.char_length(
+      pg_catalog.replace(definition, http_conflict_code, '')
+    )
+  ) / pg_catalog.char_length(http_conflict_code);
 
-  if occurrence_count <> 1 then
+  if legacy_occurrence_count = 1 and conflict_occurrence_count = 0 then
+    execute pg_catalog.replace(definition, legacy_code, http_conflict_code);
+  elsif legacy_occurrence_count = 0 and conflict_occurrence_count = 1 then
+    null;
+  else
     raise exception using
       errcode = '0A000',
       message = 'workshop_admin_update concurrency guard did not match the expected source.';
   end if;
-
-  execute pg_catalog.replace(definition, legacy_code, http_conflict_code);
 
   if excel_worker is null then
     raise exception using
@@ -44,18 +53,26 @@ begin
   end if;
 
   definition := pg_catalog.pg_get_functiondef(excel_worker);
-  occurrence_count := (
+  legacy_occurrence_count := (
     pg_catalog.char_length(definition) -
     pg_catalog.char_length(pg_catalog.replace(definition, legacy_code, ''))
   ) / pg_catalog.char_length(legacy_code);
+  conflict_occurrence_count := (
+    pg_catalog.char_length(definition) -
+    pg_catalog.char_length(
+      pg_catalog.replace(definition, http_conflict_code, '')
+    )
+  ) / pg_catalog.char_length(http_conflict_code);
 
-  if occurrence_count <> 1 then
+  if legacy_occurrence_count = 1 and conflict_occurrence_count = 0 then
+    execute pg_catalog.replace(definition, legacy_code, http_conflict_code);
+  elsif legacy_occurrence_count = 0 and conflict_occurrence_count = 1 then
+    null;
+  else
     raise exception using
       errcode = '0A000',
       message = 'excel_batch_import concurrency guard did not match the expected source.';
   end if;
-
-  execute pg_catalog.replace(definition, legacy_code, http_conflict_code);
 
   if pg_catalog.strpos(
     pg_catalog.pg_get_functiondef(admin_update), legacy_code
