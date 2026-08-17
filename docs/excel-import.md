@@ -8,7 +8,7 @@ asked—calls the capability-protected Supabase batch-import RPC.
 ## Prerequisites
 
 - Node.js 22.13 or later and dependencies installed from `package-lock.json`.
-- All eight checked-in Supabase migrations applied in filename order.
+- All nine checked-in Supabase migrations applied in filename order.
 - A current `.xlsx` workbook using all seven required visible sheets and the
   supported A–F header contract.
 - For commit mode only: the public Supabase URL/publishable key and the private
@@ -121,6 +121,9 @@ bytes and normalized payload. Repeating an identical command replays the saved
 receipt instead of inserting duplicates. The same workbook bytes with a
 different normalized payload are rejected. A changed row with an existing
 source key becomes a conflict and is not overwritten.
+If two otherwise valid commits race on the same new fingerprint, the loser
+returns HTTP 409 with code `PT409`; it does not create an extra submission or
+receipt and may be retried only after refreshing the canonical import state.
 
 ## 5. Direct publication exception
 
@@ -162,7 +165,7 @@ authorization or acceptance checks.
 - The current workbook contract does not collect email or designation.
 - Value-stream inference is heuristic; zero-signal wording falls back to
   Process Optimization and therefore requires review.
-- Form submissions have a separate web route and currently lack an equivalent
-  client idempotency key.
+- Form submissions use a separate web route with their own unguessable client
+  retry key and server-computed payload digest.
 - SQL idempotency and RLS behavior must be verified against the authenticated
   live Supabase project; checked-in migrations alone are not live evidence.
